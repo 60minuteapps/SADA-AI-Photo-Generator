@@ -70,7 +70,7 @@ SADA allows users to upload personal photos to train a custom AI model, then gen
 - Expo CLI
 - iOS Simulator or Android Emulator (for development)
 
-## 🔧 Installation
+### Installation
 
 1. Clone the repository:
 ```bash
@@ -86,12 +86,18 @@ npm install
 3. Set up environment variables:
 ```bash
 cp .env.example .env
-# Add your Supabase and Google AI Studio API keys
+```
+
+Edit `.env` with your API keys:
+```
+GOOGLE_API_KEY=your_google_ai_studio_api_key_here
+EXPO_PUBLIC_SUPABASE_URL=your_supabase_project_url_here
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key_here
 ```
 
 4. Start the development server:
 ```bash
-npx expo start
+npm start
 ```
 
 ## 🔑 Environment Variables

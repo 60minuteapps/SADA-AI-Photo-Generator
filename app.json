@@ -1,33 +1,58 @@
 {
   "expo": {
-    "name": "SADA-AI-Photo-Generator",
-    "slug": "SADA-AI-Photo-Generator",
+    "name": "SADA AI Photo Generator",
+    "slug": "sada-ai-photo-generator",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "newArchEnabled": true,
+    "scheme": "sada",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#0d1b2a"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.sada.aiphotogenerator"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#0d1b2a"
       },
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "package": "com.sada.aiphotogenerator",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-router"
-    ]
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app accesses your photos to let you select training images for AI model creation.",
+          "cameraPermission": "The app accesses your camera to let you take photos for AI model training."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "The app accesses your photo library to save generated professional photos.",
+          "savePhotosPermission": "The app saves generated professional photos to your device."
+        }
+      ]
+    ],
+    "extra": {
+      "router": {
+        "origin": false
+      }
+    }
   }
 }
