@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -11,7 +10,6 @@ import { PHOTO_STYLES, getStyleExampleImage } from '../constants/data';
 import { Gender, StyleType } from '../types';
 
 export default function StyleSelectionScreen() {
-  const insets = useSafeAreaInsets();
   const { images, gender, modelName } = useLocalSearchParams<{ 
     images: string; 
     gender: Gender; 
@@ -34,7 +32,7 @@ export default function StyleSelectionScreen() {
   };
 
   return (
-    <SafeAreaView style={[globalStyles.safeArea, { paddingTop: insets.top }]}>
+    <View style={globalStyles.container}>
       <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
@@ -142,7 +140,7 @@ export default function StyleSelectionScreen() {
           />
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 

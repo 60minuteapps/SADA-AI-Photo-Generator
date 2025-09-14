@@ -152,8 +152,9 @@ export default function PhotoPickerScreen() {
                 style={styles.addImageButton} 
                 onPress={showImageOptions}
               >
-                <MaterialIcons name="add" size={32} color={theme.colors.textSecondary} />
-                <Text style={styles.addImageText}>Add Photo</Text>
+                <View style={styles.addIconContainer}>
+                  <MaterialIcons name="add" size={32} color={theme.colors.textSecondary} />
+                </View>
               </TouchableOpacity>
             ))}
           </View>
@@ -285,10 +286,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: theme.colors.background,
   },
-  addImageText: {
-    ...globalStyles.caption,
-    marginTop: theme.spacing.xs,
-    textAlign: 'center',
+  addIconContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    flex: 1,
+    width: '100%',
   },
   helperText: {
     ...globalStyles.caption,

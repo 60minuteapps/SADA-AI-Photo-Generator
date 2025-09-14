@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { theme, globalStyles } from '../../constants/theme';
 import { Card } from '../../components/ui/Card';
@@ -22,9 +23,35 @@ interface GeneratedPhoto {
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{
+    newPhotos?: string;
+    modelName?: string;
+    style?: string;
+  }>();
+  
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
   const [generatedPhotos, setGeneratedPhotos] = useState<GeneratedPhoto[]>([]);
   const [aiModelName, setAiModelName] = useState<string>('');
+
+  // Handle new photos from generation
+  useEffect(() => {
+    if (params.newPhotos && params.modelName && params.style) {
+      try {
+        const newPhotoUrls = JSON.parse(params.newPhotos);
+        const newPhotos: GeneratedPhoto[] = newPhotoUrls.map((url: string, index: number) => ({
+          id: `${Date.now()}_${index}`,
+          uri: url,
+          style: params.style || 'professional',
+          createdAt: new Date(),
+        }));
+        
+        setGeneratedPhotos(prev => [...newPhotos, ...prev]);
+        setAiModelName(params.modelName || '');
+      } catch (error) {
+        console.error('Error parsing new photos:', error);
+      }
+    }
+  }, [params.newPhotos, params.modelName, params.style]);
 
   const pickImages = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();

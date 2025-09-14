@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { View, Text, StyleSheet, TextInput, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { theme, globalStyles } from '../constants/theme';
@@ -9,7 +8,6 @@ import { Button } from '../components/ui/Button';
 import { Gender } from '../types';
 
 export default function ModelNameScreen() {
-  const insets = useSafeAreaInsets();
   const { images, gender } = useLocalSearchParams<{ images: string; gender: Gender }>();
   const [modelName, setModelName] = useState('');
   const [isValid, setIsValid] = useState(false);
@@ -43,12 +41,16 @@ export default function ModelNameScreen() {
   ];
 
   return (
-    <SafeAreaView style={[globalStyles.safeArea, { paddingTop: insets.top }]}>
+    <View style={globalStyles.container}>
       <KeyboardAvoidingView 
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <View style={styles.content}>
+        <ScrollView 
+          style={styles.scrollContent}
+          contentContainerStyle={styles.scrollContainer}
+          showsVerticalScrollIndicator={false}
+        >
           {/* Header */}
           <View style={styles.header}>
             <Text style={globalStyles.title}>Name Your AI Model</Text>
@@ -123,19 +125,19 @@ export default function ModelNameScreen() {
               <Text style={styles.tip}>• You can always change it later</Text>
             </View>
           </Card>
-        </View>
 
-        {/* Continue Button */}
-        <View style={styles.continueSection}>
-          <Button
-            title="Continue"
-            onPress={handleContinue}
-            disabled={!isValid}
-            size="large"
-          />
-        </View>
+          {/* Continue Button */}
+          <View style={styles.continueSection}>
+            <Button
+              title="Continue"
+              onPress={handleContinue}
+              disabled={!isValid}
+              size="large"
+            />
+          </View>
+        </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -143,9 +145,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  content: {
+  scrollContent: {
     flex: 1,
+  },
+  scrollContainer: {
     padding: theme.spacing.md,
+    paddingBottom: theme.spacing.xl,
   },
   header: {
     marginBottom: theme.spacing.xl,
@@ -231,7 +236,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   continueSection: {
-    padding: theme.spacing.md,
-    paddingBottom: theme.spacing.lg,
+    marginTop: theme.spacing.xl,
+    marginBottom: theme.spacing.xl,
   },
 });

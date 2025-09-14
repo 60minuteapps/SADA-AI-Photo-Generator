@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { theme, globalStyles } from '../constants/theme';
@@ -9,7 +8,6 @@ import { Button } from '../components/ui/Button';
 import { Gender } from '../types';
 
 export default function GenderSelectionScreen() {
-  const insets = useSafeAreaInsets();
   const { images } = useLocalSearchParams<{ images: string }>();
   const [selectedGender, setSelectedGender] = useState<Gender | null>(null);
 
@@ -41,8 +39,8 @@ export default function GenderSelectionScreen() {
   ];
 
   return (
-    <SafeAreaView style={[globalStyles.safeArea, { paddingTop: insets.top }]}>
-      <View style={styles.container}>
+    <View style={globalStyles.container}>
+      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
           <Text style={globalStyles.title}>Select Gender</Text>
@@ -121,8 +119,8 @@ export default function GenderSelectionScreen() {
             size="large"
           />
         </View>
-      </View>
-    </SafeAreaView>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -210,7 +208,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   continueSection: {
-    marginTop: 'auto',
-    paddingBottom: theme.spacing.lg,
+    marginTop: theme.spacing.xl,
+    marginBottom: theme.spacing.xl,
   },
 });

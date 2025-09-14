@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Alert } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { theme, globalStyles } from '../constants/theme';
@@ -17,7 +16,6 @@ interface GenerationStep {
 }
 
 export default function GenerationProgressScreen() {
-  const insets = useSafeAreaInsets();
   const { images, gender, modelName, style } = useLocalSearchParams<{ 
     images: string; 
     gender: Gender; 
@@ -155,7 +153,7 @@ export default function GenerationProgressScreen() {
   };
 
   return (
-    <SafeAreaView style={[globalStyles.safeArea, { paddingTop: insets.top }]}>
+    <View style={globalStyles.container}>
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
@@ -269,7 +267,7 @@ export default function GenerationProgressScreen() {
           </View>
         )}
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
