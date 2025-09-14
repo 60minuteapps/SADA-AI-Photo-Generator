@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { theme } from '../constants/theme';
+import { SessionProvider } from '../contexts/SessionContext';
 
 const paperTheme = {
   colors: {
@@ -18,54 +19,55 @@ const paperTheme = {
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <PaperProvider theme={paperTheme}>
-        <StatusBar style="light" backgroundColor={theme.colors.background} />
-        <Stack
-          screenOptions={{
-            headerStyle: {
-              backgroundColor: theme.colors.background,
-            },
-            headerTintColor: theme.colors.text,
-            headerTitleStyle: {
-              fontFamily: theme.fonts.medium,
-              fontSize: 18,
-            },
-            headerBackTitleVisible: false,
-          }}
-        >
-          <Stack.Screen 
-            name="(tabs)" 
-            options={{ headerShown: false }} 
-          />
-          <Stack.Screen 
-            name="package/[id]" 
-            options={{ title: 'Package Details' }} 
-          />
-          <Stack.Screen 
-            name="photo-picker" 
-            options={{ title: 'Select Photos' }} 
-          />
-          <Stack.Screen 
-            name="gender-selection" 
-            options={{ title: 'Select Gender' }} 
-          />
-          <Stack.Screen 
-            name="model-name" 
-            options={{ title: 'Name Your Model' }} 
-          />
-          <Stack.Screen 
-            name="style-selection" 
-            options={{ title: 'Choose Style' }} 
-          />
-          <Stack.Screen 
-            name="generation-progress" 
-            options={{ 
-              title: 'Generating Photos',
-              headerBackVisible: false,
-            }} 
-          />
-        </Stack>
-      </PaperProvider>
+      <SessionProvider>
+        <PaperProvider theme={paperTheme}>
+          <StatusBar style="light" backgroundColor={theme.colors.background} />
+          <Stack
+            screenOptions={{
+              headerStyle: {
+                backgroundColor: theme.colors.background,
+              },
+              headerTintColor: theme.colors.text,
+              headerTitleStyle: {
+                fontFamily: theme.fonts.medium,
+                fontSize: 18,
+              },
+            }}
+          >
+            <Stack.Screen 
+              name="(tabs)" 
+              options={{ headerShown: false }} 
+            />
+            <Stack.Screen 
+              name="package/[id]" 
+              options={{ title: 'Package Details' }} 
+            />
+            <Stack.Screen 
+              name="photo-picker" 
+              options={{ title: 'Select Photos' }} 
+            />
+            <Stack.Screen 
+              name="gender-selection" 
+              options={{ title: 'Select Gender' }} 
+            />
+            <Stack.Screen 
+              name="model-name" 
+              options={{ title: 'Name Your Model' }} 
+            />
+            <Stack.Screen 
+              name="style-selection" 
+              options={{ title: 'Choose Style' }} 
+            />
+            <Stack.Screen 
+              name="generation-progress" 
+              options={{ 
+                title: 'Generating Photos',
+                headerBackVisible: false,
+              }} 
+            />
+          </Stack>
+        </PaperProvider>
+      </SessionProvider>
     </SafeAreaProvider>
   );
 }

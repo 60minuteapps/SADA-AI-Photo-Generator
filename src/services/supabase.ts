@@ -1,215 +1,193 @@
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
-import { AIModel, GeneratedPhoto, User } from '../types';
+import { UserSession, PhotoPackage, GeneratedPhoto } from '../types';
 
 // Supabase configuration
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 
-// Custom storage adapter for Expo
-const ExpoSecureStoreAdapter = {
-  getItem: (key: string) => {
-    return SecureStore.getItemAsync(key);
-  },
-  setItem: (key: string, value: string) => {
-    SecureStore.setItemAsync(key, value);
-  },
-  removeItem: (key: string) => {
-    SecureStore.deleteItemAsync(key);
-  },
-};
-
+// Create Supabase client for anonymous access
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: ExpoSecureStoreAdapter,
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: false,
+    persistSession: false, // No authentication needed
+    autoRefreshToken: false,
   },
 });
 
-class SupabaseService {
-  // User Management
-  async getCurrentUser(): Promise<User | null> {
-    try {
-      const { data: { user }, error } = await supabase.auth.getUser();
-      if (error || !user) return null;
+const SESSION_STORAGE_KEY = 'anonymous_session_token';
 
-      const { data: profile } = await supabase
-        .from('users')
+class SupabaseService {
+  private currentSession: UserSession | null = null;
+
+  // Session Management
+  async createAnonymousSession(deviceId?: string): Promise<{ session: UserSession | null; error: string | null }> {
+    try {
+      const { data, error } = await supabase.rpc('create_anonymous_session', {
+        device_id_param: deviceId || null
+      });
+
+      if (error) {
+        return { session: null, error: error.message };
+      }
+
+      if (data && data.length > 0) {
+        const sessionData = data[0];
+        const session: UserSession = {
+          id: sessionData.session_id,
+          sessionToken: sessionData.session_token,
+          deviceId,
+          createdAt: new Date(),
+          lastActiveAt: new Date(),
+          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+        };
+
+        // Store session token locally
+        await AsyncStorage.setItem(SESSION_STORAGE_KEY, sessionData.session_token);
+        this.currentSession = session;
+
+        return { session, error: null };
+      }
+
+      return { session: null, error: 'Failed to create session' };
+    } catch (error) {
+      return { session: null, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  async getCurrentSession(): Promise<UserSession | null> {
+    if (this.currentSession) {
+      return this.currentSession;
+    }
+
+    try {
+      const sessionToken = await AsyncStorage.getItem(SESSION_STORAGE_KEY);
+      if (!sessionToken) return null;
+
+      const { data, error } = await supabase
+        .from('user_sessions')
         .select('*')
-        .eq('id', user.id)
+        .eq('session_token', sessionToken)
+        .gt('expires_at', new Date().toISOString())
         .single();
 
-      if (!profile) return null;
+      if (error || !data) return null;
 
-      return {
-        id: profile.id,
-        email: profile.email,
-        aiModels: [],
-        generatedPhotos: [],
+      this.currentSession = {
+        id: data.id,
+        sessionToken: data.session_token,
+        deviceId: data.device_id,
+        createdAt: new Date(data.created_at),
+        lastActiveAt: new Date(data.last_active_at),
+        expiresAt: new Date(data.expires_at),
       };
+
+      return this.currentSession;
     } catch (error) {
-      console.error('Error getting current user:', error);
+      console.error('Error getting current session:', error);
       return null;
     }
   }
 
-  async signUp(email: string, password: string): Promise<{ user: User | null; error: string | null }> {
+  async updateSessionActivity(): Promise<void> {
+    const session = await this.getCurrentSession();
+    if (!session) return;
+
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
+      await supabase.rpc('update_session_activity', {
+        session_token_param: session.sessionToken
       });
-
-      if (error) {
-        return { user: null, error: error.message };
-      }
-
-      if (data.user) {
-        // Create user profile
-        const { error: profileError } = await supabase
-          .from('users')
-          .insert({
-            id: data.user.id,
-            email: data.user.email,
-          });
-
-        if (profileError) {
-          return { user: null, error: profileError.message };
-        }
-
-        return {
-          user: {
-            id: data.user.id,
-            email: data.user.email!,
-            aiModels: [],
-            generatedPhotos: [],
-          },
-          error: null,
-        };
-      }
-
-      return { user: null, error: 'Failed to create user' };
     } catch (error) {
-      return { user: null, error: error instanceof Error ? error.message : 'Unknown error' };
+      console.error('Error updating session activity:', error);
     }
   }
 
-  async signIn(email: string, password: string): Promise<{ user: User | null; error: string | null }> {
+  // Photo Package Management
+  async getPhotoPackages(): Promise<{ packages: PhotoPackage[]; error: string | null }> {
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (error) {
-        return { user: null, error: error.message };
-      }
-
-      if (data.user) {
-        const user = await this.getCurrentUser();
-        return { user, error: null };
-      }
-
-      return { user: null, error: 'Failed to sign in' };
-    } catch (error) {
-      return { user: null, error: error instanceof Error ? error.message : 'Unknown error' };
-    }
-  }
-
-  async signOut(): Promise<{ error: string | null }> {
-    try {
-      const { error } = await supabase.auth.signOut();
-      return { error: error?.message || null };
-    } catch (error) {
-      return { error: error instanceof Error ? error.message : 'Unknown error' };
-    }
-  }
-
-  // AI Model Management
-  async saveAIModel(model: Omit<AIModel, 'id' | 'createdAt'>): Promise<{ model: AIModel | null; error: string | null }> {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return { model: null, error: 'User not authenticated' };
-
       const { data, error } = await supabase
-        .from('ai_models')
-        .insert({
-          user_id: user.id,
-          name: model.name,
-          gender: model.gender,
-          training_images: model.trainingImages,
-          is_active: model.isActive,
-        })
-        .select()
-        .single();
-
-      if (error) {
-        return { model: null, error: error.message };
-      }
-
-      return {
-        model: {
-          id: data.id,
-          name: data.name,
-          gender: data.gender,
-          trainingImages: data.training_images,
-          createdAt: new Date(data.created_at),
-          isActive: data.is_active,
-        },
-        error: null,
-      };
-    } catch (error) {
-      return { model: null, error: error instanceof Error ? error.message : 'Unknown error' };
-    }
-  }
-
-  async getUserAIModels(): Promise<{ models: AIModel[]; error: string | null }> {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return { models: [], error: 'User not authenticated' };
-
-      const { data, error } = await supabase
-        .from('ai_models')
+        .from('photo_packages')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('is_active', true)
         .order('created_at', { ascending: false });
 
       if (error) {
-        return { models: [], error: error.message };
+        return { packages: [], error: error.message };
       }
 
-      const models: AIModel[] = data.map(item => ({
+      const packages: PhotoPackage[] = data.map(item => ({
         id: item.id,
         name: item.name,
+        description: item.description,
+        category: item.category,
         gender: item.gender,
-        trainingImages: item.training_images,
-        createdAt: new Date(item.created_at),
+        stylePrompt: item.style_prompt,
+        thumbnailUrl: item.thumbnail_url,
         isActive: item.is_active,
+        createdAt: new Date(item.created_at),
+        updatedAt: new Date(item.updated_at),
       }));
 
-      return { models, error: null };
+      return { packages, error: null };
     } catch (error) {
-      return { models: [], error: error instanceof Error ? error.message : 'Unknown error' };
+      return { packages: [], error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  async getPhotoPackageById(id: string): Promise<{ package: PhotoPackage | null; error: string | null }> {
+    try {
+      const { data, error } = await supabase
+        .from('photo_packages')
+        .select('*')
+        .eq('id', id)
+        .eq('is_active', true)
+        .single();
+
+      if (error) {
+        return { package: null, error: error.message };
+      }
+
+      const photoPackage: PhotoPackage = {
+        id: data.id,
+        name: data.name,
+        description: data.description,
+        category: data.category,
+        gender: data.gender,
+        stylePrompt: data.style_prompt,
+        thumbnailUrl: data.thumbnail_url,
+        isActive: data.is_active,
+        createdAt: new Date(data.created_at),
+        updatedAt: new Date(data.updated_at),
+      };
+
+      return { package: photoPackage, error: null };
+    } catch (error) {
+      return { package: null, error: error instanceof Error ? error.message : 'Unknown error' };
     }
   }
 
   // Generated Photos Management
-  async saveGeneratedPhoto(photo: Omit<GeneratedPhoto, 'id' | 'createdAt'>): Promise<{ photo: GeneratedPhoto | null; error: string | null }> {
+  async createGeneratedPhoto(photo: {
+    packageId?: string;
+    originalPhotoUrl?: string;
+    promptUsed?: string;
+    metadata?: Record<string, any>;
+  }): Promise<{ photo: GeneratedPhoto | null; error: string | null }> {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return { photo: null, error: 'User not authenticated' };
+      const session = await this.getCurrentSession();
+      if (!session) {
+        return { photo: null, error: 'No active session' };
+      }
 
       const { data, error } = await supabase
         .from('generated_photos')
         .insert({
-          user_id: user.id,
-          url: photo.url,
-          style: photo.style,
-          model_id: photo.modelId,
-          is_selected: photo.isSelected,
+          session_id: session.id,
+          package_id: photo.packageId,
+          original_photo_url: photo.originalPhotoUrl,
+          prompt_used: photo.promptUsed,
+          generation_status: 'pending',
+          metadata: photo.metadata,
         })
         .select()
         .single();
@@ -218,31 +196,90 @@ class SupabaseService {
         return { photo: null, error: error.message };
       }
 
-      return {
-        photo: {
-          id: data.id,
-          url: data.url,
-          style: data.style,
-          modelId: data.model_id,
-          createdAt: new Date(data.created_at),
-          isSelected: data.is_selected,
-        },
-        error: null,
+      const generatedPhoto: GeneratedPhoto = {
+        id: data.id,
+        sessionId: data.session_id,
+        packageId: data.package_id,
+        originalPhotoUrl: data.original_photo_url,
+        generatedPhotoUrl: data.generated_photo_url,
+        promptUsed: data.prompt_used,
+        generationStatus: data.generation_status,
+        errorMessage: data.error_message,
+        metadata: data.metadata,
+        createdAt: new Date(data.created_at),
+        completedAt: data.completed_at ? new Date(data.completed_at) : undefined,
       };
+
+      return { photo: generatedPhoto, error: null };
     } catch (error) {
       return { photo: null, error: error instanceof Error ? error.message : 'Unknown error' };
     }
   }
 
-  async getUserGeneratedPhotos(): Promise<{ photos: GeneratedPhoto[]; error: string | null }> {
+  async updateGeneratedPhoto(
+    id: string,
+    updates: {
+      generatedPhotoUrl?: string;
+      generationStatus?: 'pending' | 'processing' | 'completed' | 'failed';
+      errorMessage?: string;
+      completedAt?: Date;
+    }
+  ): Promise<{ photo: GeneratedPhoto | null; error: string | null }> {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return { photos: [], error: 'User not authenticated' };
+      const session = await this.getCurrentSession();
+      if (!session) {
+        return { photo: null, error: 'No active session' };
+      }
+
+      const updateData: any = {};
+      if (updates.generatedPhotoUrl !== undefined) updateData.generated_photo_url = updates.generatedPhotoUrl;
+      if (updates.generationStatus !== undefined) updateData.generation_status = updates.generationStatus;
+      if (updates.errorMessage !== undefined) updateData.error_message = updates.errorMessage;
+      if (updates.completedAt !== undefined) updateData.completed_at = updates.completedAt.toISOString();
+
+      const { data, error } = await supabase
+        .from('generated_photos')
+        .update(updateData)
+        .eq('id', id)
+        .eq('session_id', session.id)
+        .select()
+        .single();
+
+      if (error) {
+        return { photo: null, error: error.message };
+      }
+
+      const generatedPhoto: GeneratedPhoto = {
+        id: data.id,
+        sessionId: data.session_id,
+        packageId: data.package_id,
+        originalPhotoUrl: data.original_photo_url,
+        generatedPhotoUrl: data.generated_photo_url,
+        promptUsed: data.prompt_used,
+        generationStatus: data.generation_status,
+        errorMessage: data.error_message,
+        metadata: data.metadata,
+        createdAt: new Date(data.created_at),
+        completedAt: data.completed_at ? new Date(data.completed_at) : undefined,
+      };
+
+      return { photo: generatedPhoto, error: null };
+    } catch (error) {
+      return { photo: null, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  async getSessionGeneratedPhotos(): Promise<{ photos: GeneratedPhoto[]; error: string | null }> {
+    try {
+      const session = await this.getCurrentSession();
+      if (!session) {
+        return { photos: [], error: 'No active session' };
+      }
 
       const { data, error } = await supabase
         .from('generated_photos')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('session_id', session.id)
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -251,11 +288,16 @@ class SupabaseService {
 
       const photos: GeneratedPhoto[] = data.map(item => ({
         id: item.id,
-        url: item.url,
-        style: item.style,
-        modelId: item.model_id,
+        sessionId: item.session_id,
+        packageId: item.package_id,
+        originalPhotoUrl: item.original_photo_url,
+        generatedPhotoUrl: item.generated_photo_url,
+        promptUsed: item.prompt_used,
+        generationStatus: item.generation_status,
+        errorMessage: item.error_message,
+        metadata: item.metadata,
         createdAt: new Date(item.created_at),
-        isSelected: item.is_selected,
+        completedAt: item.completed_at ? new Date(item.completed_at) : undefined,
       }));
 
       return { photos, error: null };
@@ -265,19 +307,21 @@ class SupabaseService {
   }
 
   // File Upload
-  async uploadImage(uri: string, fileName: string): Promise<{ url: string | null; error: string | null }> {
+  async uploadImage(uri: string, fileName: string, bucket: 'user-photos' | 'generated-photos' = 'user-photos'): Promise<{ url: string | null; error: string | null }> {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return { url: null, error: 'User not authenticated' };
+      const session = await this.getCurrentSession();
+      if (!session) {
+        return { url: null, error: 'No active session' };
+      }
 
       // Convert URI to blob for upload
       const response = await fetch(uri);
       const blob = await response.blob();
 
-      const filePath = `${user.id}/${fileName}`;
+      const filePath = `${session.id}/${fileName}`;
 
       const { data, error } = await supabase.storage
-        .from('user-images')
+        .from(bucket)
         .upload(filePath, blob);
 
       if (error) {
@@ -285,13 +329,41 @@ class SupabaseService {
       }
 
       const { data: { publicUrl } } = supabase.storage
-        .from('user-images')
+        .from(bucket)
         .getPublicUrl(data.path);
 
       return { url: publicUrl, error: null };
     } catch (error) {
       return { url: null, error: error instanceof Error ? error.message : 'Unknown error' };
     }
+  }
+
+  async deleteImage(filePath: string, bucket: 'user-photos' | 'generated-photos' = 'user-photos'): Promise<{ error: string | null }> {
+    try {
+      const { error } = await supabase.storage
+        .from(bucket)
+        .remove([filePath]);
+
+      return { error: error?.message || null };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  // Initialize session on app start
+  async initializeSession(deviceId?: string): Promise<UserSession | null> {
+    let session = await this.getCurrentSession();
+    
+    if (!session) {
+      const { session: newSession } = await this.createAnonymousSession(deviceId);
+      session = newSession;
+    }
+
+    if (session) {
+      await this.updateSessionActivity();
+    }
+
+    return session;
   }
 }
 

@@ -1,3 +1,41 @@
+// Database types matching our Supabase schema
+export interface UserSession {
+  id: string;
+  sessionToken: string;
+  deviceId?: string;
+  createdAt: Date;
+  lastActiveAt: Date;
+  expiresAt: Date;
+}
+
+export interface PhotoPackage {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  gender: 'male' | 'female' | 'unisex';
+  stylePrompt: string;
+  thumbnailUrl?: string;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface GeneratedPhoto {
+  id: string;
+  sessionId: string;
+  packageId?: string;
+  originalPhotoUrl?: string;
+  generatedPhotoUrl?: string;
+  promptUsed?: string;
+  generationStatus: 'pending' | 'processing' | 'completed' | 'failed';
+  errorMessage?: string;
+  metadata?: Record<string, any>;
+  createdAt: Date;
+  completedAt?: Date;
+}
+
+// Legacy types for backward compatibility
 export interface AIModel {
   id: string;
   name: string;
@@ -16,23 +54,6 @@ export interface PhotoStyle {
   promptKey: string;
 }
 
-export interface PhotoPackage {
-  id: string;
-  name: string;
-  description: string;
-  styles: PhotoStyle[];
-  previewImage: string;
-}
-
-export interface GeneratedPhoto {
-  id: string;
-  url: string;
-  style: string;
-  modelId: string;
-  createdAt: Date;
-  isSelected: boolean;
-}
-
 export interface User {
   id: string;
   email: string;
@@ -41,13 +62,14 @@ export interface User {
 }
 
 export interface AppState {
-  currentUser: User | null;
+  currentSession: UserSession | null;
   selectedPackage: PhotoPackage | null;
   selectedModel: AIModel | null;
   selectedStyle: PhotoStyle | null;
   uploadedImages: string[];
   isGenerating: boolean;
   generationProgress: number;
+  generatedPhotos: GeneratedPhoto[];
 }
 
 export interface PromptLibrary {
