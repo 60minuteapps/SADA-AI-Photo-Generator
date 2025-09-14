@@ -94,7 +94,7 @@ export default function ProfileScreen() {
   };
 
   return (
-    <SafeAreaView style={[globalStyles.safeArea, { paddingTop: insets.top }]}>
+    <SafeAreaView style={globalStyles.safeArea} edges={['left', 'right']}>
       <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
         {/* AI Model Section */}
         <Card style={styles.section}>

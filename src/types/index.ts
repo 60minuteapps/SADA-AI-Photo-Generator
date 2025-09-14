@@ -12,13 +12,16 @@ export interface PhotoPackage {
   id: string;
   name: string;
   description: string;
-  category: string;
-  gender: 'male' | 'female' | 'unisex';
-  stylePrompt: string;
+  category?: string;
+  gender?: 'male' | 'female' | 'unisex';
+  stylePrompt?: string;
   thumbnailUrl?: string;
-  isActive: boolean;
-  createdAt: Date;
-  updatedAt: Date;
+  isActive?: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
+  // UI-specific properties
+  previewImage: any;
+  styles: PhotoStyle[];
 }
 
 export interface GeneratedPhoto {

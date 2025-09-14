@@ -16,7 +16,7 @@ export default function ExploreScreen() {
   };
 
   return (
-    <SafeAreaView style={[globalStyles.safeArea, { paddingTop: insets.top }]}>
+    <SafeAreaView style={globalStyles.safeArea} edges={['left', 'right']}>
       <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
