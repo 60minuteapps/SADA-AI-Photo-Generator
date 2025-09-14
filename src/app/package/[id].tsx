@@ -1,6 +1,5 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -10,18 +9,17 @@ import { Button } from '../../components/ui/Button';
 import { PACKAGES, getStyleExampleImage } from '../../constants/data';
 
 export default function PackageScreen() {
-  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   
   const packageData = PACKAGES.find(pkg => pkg.id === id);
 
   if (!packageData) {
     return (
-      <SafeAreaView style={globalStyles.safeArea}>
+      <View style={globalStyles.container}>
         <View style={styles.errorContainer}>
           <Text style={globalStyles.title}>Package not found</Text>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -30,7 +28,7 @@ export default function PackageScreen() {
   };
 
   return (
-    <SafeAreaView style={[globalStyles.safeArea, { paddingTop: insets.top }]}>
+    <View style={globalStyles.container}>
       <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
         {/* Package Header */}
         <Card style={styles.headerCard}>
@@ -177,7 +175,7 @@ export default function PackageScreen() {
           />
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 

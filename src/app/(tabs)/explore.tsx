@@ -72,59 +72,6 @@ export default function ExploreScreen() {
           ))}
         </View>
 
-        {/* Features Section */}
-        <Card style={styles.featuresCard}>
-          <Text style={styles.featuresTitle}>What's Included</Text>
-          <View style={styles.featuresList}>
-            <View style={styles.featureItem}>
-              <MaterialIcons name="smart-toy" size={24} color={theme.colors.accent} />
-              <Text style={styles.featureText}>Custom AI model training</Text>
-            </View>
-            <View style={styles.featureItem}>
-              <MaterialIcons name="photo-camera" size={24} color={theme.colors.accent} />
-              <Text style={styles.featureText}>3 photos per style generation</Text>
-            </View>
-            <View style={styles.featureItem}>
-              <MaterialIcons name="high-quality" size={24} color={theme.colors.accent} />
-              <Text style={styles.featureText}>4K ultra-high resolution</Text>
-            </View>
-            <View style={styles.featureItem}>
-              <MaterialIcons name="business" size={24} color={theme.colors.accent} />
-              <Text style={styles.featureText}>LinkedIn optimized</Text>
-            </View>
-          </View>
-        </Card>
-
-        {/* Getting Started Guide */}
-        <Card style={styles.guideCard}>
-          <Text style={styles.guideTitle}>How It Works</Text>
-          <View style={styles.stepsList}>
-            <View style={styles.step}>
-              <View style={styles.stepNumber}>
-                <Text style={styles.stepNumberText}>1</Text>
-              </View>
-              <Text style={styles.stepText}>Upload 3 high-quality photos</Text>
-            </View>
-            <View style={styles.step}>
-              <View style={styles.stepNumber}>
-                <Text style={styles.stepNumberText}>2</Text>
-              </View>
-              <Text style={styles.stepText}>Configure your AI model</Text>
-            </View>
-            <View style={styles.step}>
-              <View style={styles.stepNumber}>
-                <Text style={styles.stepNumberText}>3</Text>
-              </View>
-              <Text style={styles.stepText}>Choose your professional style</Text>
-            </View>
-            <View style={styles.step}>
-              <View style={styles.stepNumber}>
-                <Text style={styles.stepNumberText}>4</Text>
-              </View>
-              <Text style={styles.stepText}>Generate professional photos</Text>
-            </View>
-          </View>
-        </Card>
       </ScrollView>
     </SafeAreaView>
   );
@@ -210,56 +157,5 @@ const styles = StyleSheet.create({
     ...globalStyles.body,
     color: theme.colors.accent,
     fontFamily: theme.fonts.medium,
-  },
-  featuresCard: {
-    marginBottom: theme.spacing.xl,
-  },
-  featuresTitle: {
-    ...globalStyles.subtitle,
-    marginBottom: theme.spacing.md,
-  },
-  featuresList: {
-    gap: theme.spacing.md,
-  },
-  featureItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.md,
-  },
-  featureText: {
-    ...globalStyles.body,
-    flex: 1,
-  },
-  guideCard: {
-    marginBottom: theme.spacing.xl,
-  },
-  guideTitle: {
-    ...globalStyles.subtitle,
-    marginBottom: theme.spacing.md,
-  },
-  stepsList: {
-    gap: theme.spacing.md,
-  },
-  step: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.md,
-  },
-  stepNumber: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: theme.colors.accent,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  stepNumberText: {
-    color: theme.colors.white,
-    fontFamily: theme.fonts.bold,
-    fontSize: 16,
-  },
-  stepText: {
-    ...globalStyles.body,
-    flex: 1,
   },
 });

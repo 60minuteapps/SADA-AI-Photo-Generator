@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -15,7 +14,6 @@ interface SelectedImage {
 }
 
 export default function PhotoPickerScreen() {
-  const insets = useSafeAreaInsets();
   const [selectedImages, setSelectedImages] = useState<SelectedImage[]>([]);
 
   const pickFromLibrary = async () => {
@@ -95,7 +93,7 @@ export default function PhotoPickerScreen() {
   };
 
   return (
-    <SafeAreaView style={[globalStyles.safeArea, { paddingTop: insets.top }]}>
+    <View style={globalStyles.container}>
       <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
@@ -205,7 +203,7 @@ export default function PhotoPickerScreen() {
           </View>
         </Card>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 

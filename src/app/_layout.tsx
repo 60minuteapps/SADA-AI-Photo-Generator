@@ -2,6 +2,9 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { TouchableOpacity } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { theme } from '../constants/theme';
 import { SessionProvider } from '../contexts/SessionContext';
 
@@ -39,7 +42,21 @@ export default function RootLayout() {
           />
           <Stack.Screen 
             name="package/[id]" 
-            options={{ title: 'Package Details' }} 
+            options={{
+              title: 'Package Details',
+              headerLeft: () => (
+                <TouchableOpacity 
+                  onPress={() => router.back()}
+                  style={{ marginLeft: 16, padding: 8 }}
+                >
+                  <MaterialIcons 
+                    name="arrow-back" 
+                    size={24} 
+                    color={theme.colors.text} 
+                  />
+                </TouchableOpacity>
+              ),
+            }} 
           />
           <Stack.Screen 
             name="photo-picker" 
