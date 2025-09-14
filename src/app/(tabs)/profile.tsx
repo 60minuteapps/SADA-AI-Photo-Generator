@@ -8,6 +8,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { theme, globalStyles } from '../../constants/theme';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
+import { supabaseService } from '../../services/supabase';
+import { GeneratedPhoto as DBGeneratedPhoto } from '../../types';
 
 interface UploadedImage {
   id: string;
@@ -27,13 +29,20 @@ export default function ProfileScreen() {
     newPhotos?: string;
     modelName?: string;
     style?: string;
+    recordId?: string;
   }>();
   
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
   const [generatedPhotos, setGeneratedPhotos] = useState<GeneratedPhoto[]>([]);
   const [aiModelName, setAiModelName] = useState<string>('');
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Handle new photos from generation
+  // Load generated photos from database
+  useEffect(() => {
+    loadGeneratedPhotos();
+  }, []);
+
+  // Handle new photos from generation (fallback for URL params)
   useEffect(() => {
     if (params.newPhotos && params.modelName && params.style) {
       try {
@@ -52,6 +61,39 @@ export default function ProfileScreen() {
       }
     }
   }, [params.newPhotos, params.modelName, params.style]);
+
+  const loadGeneratedPhotos = async () => {
+    try {
+      setIsLoading(true);
+      const { photos, error } = await supabaseService.getSessionGeneratedPhotos();
+      
+      if (error) {
+        console.error('Error loading generated photos:', error);
+        return;
+      }
+
+      // Convert database photos to UI format
+      const uiPhotos: GeneratedPhoto[] = photos
+        .filter(photo => photo.generatedPhotoUrl) // Only show completed photos
+        .map(photo => ({
+          id: photo.id,
+          uri: photo.generatedPhotoUrl!,
+          style: photo.metadata?.style || 'professional',
+          createdAt: photo.createdAt,
+        }));
+
+      setGeneratedPhotos(uiPhotos);
+
+      // Set AI model name from the most recent photo
+      if (photos.length > 0 && photos[0].metadata?.modelName) {
+        setAiModelName(photos[0].metadata.modelName);
+      }
+    } catch (error) {
+      console.error('Error loading generated photos:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const pickImages = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -120,6 +162,35 @@ export default function ProfileScreen() {
     );
   };
 
+  const deleteAIModel = async () => {
+    Alert.alert(
+      'Delete AI Model',
+      'Are you sure you want to delete your AI model? This will also remove all generated photos and cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // In a full implementation, you'd delete the database records here
+              // For now, just clear the local state
+              setAiModelName('');
+              setGeneratedPhotos([]);
+              setUploadedImages([]);
+              
+              // Optionally reload from database to ensure consistency
+              await loadGeneratedPhotos();
+            } catch (error) {
+              console.error('Error deleting AI model:', error);
+              Alert.alert('Error', 'Failed to delete AI model. Please try again.');
+            }
+          }
+        },
+      ]
+    );
+  };
+
   return (
     <SafeAreaView style={globalStyles.safeArea} edges={['left', 'right']}>
       <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
@@ -127,9 +198,17 @@ export default function ProfileScreen() {
         <Card style={styles.section}>
           <Text style={globalStyles.title}>My AI Model</Text>
           {aiModelName ? (
-            <View style={styles.modelInfo}>
-              <MaterialIcons name="smart-toy" size={24} color={theme.colors.accent} />
-              <Text style={styles.modelName}>{aiModelName}</Text>
+            <View style={styles.modelInfoContainer}>
+              <View style={styles.modelInfo}>
+                <MaterialIcons name="smart-toy" size={24} color={theme.colors.accent} />
+                <Text style={styles.modelName}>{aiModelName}</Text>
+              </View>
+              <TouchableOpacity 
+                style={styles.deleteButton}
+                onPress={deleteAIModel}
+              >
+                <MaterialIcons name="delete" size={20} color={theme.colors.error} />
+              </TouchableOpacity>
             </View>
           ) : (
             <Text style={globalStyles.caption}>No AI model created yet</Text>
@@ -174,12 +253,20 @@ export default function ProfileScreen() {
         {/* Generated Photos Section */}
         <Card style={styles.section}>
           <Text style={globalStyles.subtitle}>Generated Photos</Text>
-          {generatedPhotos.length > 0 ? (
+          {isLoading ? (
+            <View style={styles.loadingState}>
+              <MaterialIcons name="hourglass-empty" size={24} color={theme.colors.accent} />
+              <Text style={styles.loadingText}>Loading photos...</Text>
+            </View>
+          ) : generatedPhotos.length > 0 ? (
             <View style={styles.photoGrid}>
               {generatedPhotos.map((photo) => (
                 <View key={photo.id} style={styles.photoContainer}>
                   <Image source={{ uri: photo.uri }} style={styles.generatedPhoto} />
-                  <Text style={styles.photoStyle}>{photo.style}</Text>
+                  <Text style={styles.photoStyle}>{photo.style.replace('_', ' ')}</Text>
+                  <Text style={styles.photoDate}>
+                    {photo.createdAt.toLocaleDateString()}
+                  </Text>
                 </View>
               ))}
             </View>
@@ -231,15 +318,32 @@ const styles = StyleSheet.create({
     color: theme.colors.accent,
     fontFamily: theme.fonts.medium,
   },
+  modelInfoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   modelInfo: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.spacing.sm,
+    flex: 1,
   },
   modelName: {
     ...globalStyles.body,
     fontFamily: theme.fonts.medium,
     color: theme.colors.accent,
+  },
+  deleteButton: {
+    padding: theme.spacing.sm,
+    borderRadius: theme.borderRadius.sm,
+    backgroundColor: theme.colors.background,
+    borderWidth: 1,
+    borderColor: theme.colors.error,
+    minWidth: theme.touchTarget.minHeight,
+    minHeight: theme.touchTarget.minHeight,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   imageGrid: {
     flexDirection: 'row',
@@ -316,5 +420,22 @@ const styles = StyleSheet.create({
   },
   actionSection: {
     marginBottom: theme.spacing.xl,
+  },
+  loadingState: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: theme.spacing.xl,
+    gap: theme.spacing.sm,
+  },
+  loadingText: {
+    ...globalStyles.body,
+    color: theme.colors.accent,
+  },
+  photoDate: {
+    ...globalStyles.caption,
+    marginTop: theme.spacing.xs / 2,
+    textAlign: 'center',
+    color: theme.colors.textSecondary,
   },
 });

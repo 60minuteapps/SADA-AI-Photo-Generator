@@ -8,18 +8,22 @@ export interface UserSession {
   expiresAt: Date;
 }
 
-export interface PhotoPackage {
+// Database PhotoPackage (matches Supabase schema)
+export interface DBPhotoPackage {
   id: string;
   name: string;
   description: string;
-  category?: string;
-  gender?: 'male' | 'female' | 'unisex';
-  stylePrompt?: string;
+  category: string;
+  gender: 'male' | 'female' | 'unisex';
+  stylePrompt: string;
   thumbnailUrl?: string;
-  isActive?: boolean;
-  createdAt?: Date;
-  updatedAt?: Date;
-  // UI-specific properties
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// UI PhotoPackage (includes UI-specific properties)
+export interface PhotoPackage extends DBPhotoPackage {
   previewImage: any;
   styles: PhotoStyle[];
 }

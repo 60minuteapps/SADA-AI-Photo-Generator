@@ -1,22 +1,40 @@
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
-import { UserSession, PhotoPackage, GeneratedPhoto } from '../types';
+import { UserSession, DBPhotoPackage, PhotoPackage, GeneratedPhoto } from '../types';
 import Constants from 'expo-constants';
 
-// Supabase configuration from environment variables
-const supabaseUrl = Constants.expoConfig?.extra?.supabaseUrl || '';
-const supabaseAnonKey = Constants.expoConfig?.extra?.supabaseAnonKey || '';
-
-// Validate environment variables
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing required Supabase environment variables. Please check your .env file.');
+// Get environment variables with runtime check
+function getEnvVar(name: string): string {
+  // @ts-ignore - Access process.env dynamically
+  const value = process.env[name];
+  console.log(`Environment variable ${name}:`, value ? 'Set' : 'Missing');
+  return value || '';
 }
 
-// Create Supabase client for anonymous access
+// Supabase configuration from environment variables
+const supabaseUrl = getEnvVar('EXPO_PUBLIC_SUPABASE_URL');
+const supabaseAnonKey = getEnvVar('EXPO_PUBLIC_SUPABASE_ANON_KEY');
+
+// Debug logging
+console.log('Final supabaseUrl:', supabaseUrl);
+console.log('Final supabaseAnonKey:', supabaseAnonKey ? 'Set' : 'Empty');
+
+// Validate environment variables
+if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes('${')) {
+  console.error('Supabase configuration invalid:');
+  console.error('- URL:', supabaseUrl || 'MISSING');
+  console.error('- Key:', supabaseAnonKey ? 'SET' : 'MISSING');
+  console.error('Please ensure EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY are properly set in your .env file');
+  
+  // Don't throw error, just log warning for now to prevent app crash
+  console.warn('Supabase client will not work properly without valid environment variables');
+}
+
+// Create Supabase client
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    persistSession: false, // No authentication needed
+    persistSession: false,
     autoRefreshToken: false,
   },
 });
@@ -109,7 +127,7 @@ class SupabaseService {
   }
 
   // Photo Package Management
-  async getPhotoPackages(): Promise<{ packages: PhotoPackage[]; error: string | null }> {
+  async getPhotoPackages(): Promise<{ packages: DBPhotoPackage[]; error: string | null }> {
     try {
       const { data, error } = await supabase
         .from('photo_packages')
@@ -121,7 +139,7 @@ class SupabaseService {
         return { packages: [], error: error.message };
       }
 
-      const packages: PhotoPackage[] = data.map(item => ({
+      const packages: DBPhotoPackage[] = data.map(item => ({
         id: item.id,
         name: item.name,
         description: item.description,
@@ -140,7 +158,7 @@ class SupabaseService {
     }
   }
 
-  async getPhotoPackageById(id: string): Promise<{ package: PhotoPackage | null; error: string | null }> {
+  async getPhotoPackageById(id: string): Promise<{ package: DBPhotoPackage | null; error: string | null }> {
     try {
       const { data, error } = await supabase
         .from('photo_packages')
@@ -153,7 +171,7 @@ class SupabaseService {
         return { package: null, error: error.message };
       }
 
-      const photoPackage: PhotoPackage = {
+      const photoPackage: DBPhotoPackage = {
         id: data.id,
         name: data.name,
         description: data.description,

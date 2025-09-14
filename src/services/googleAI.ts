@@ -24,10 +24,10 @@ class GoogleAIService {
   constructor() {
     // First try to get from Expo Constants (which reads from app.json extra config)
     // Then fallback to process.env for development
-    this.apiKey = Constants.expoConfig?.extra?.googleApiKey || process.env.GOOGLE_API_KEY || '';
+    this.apiKey = Constants.expoConfig?.extra?.googleApiKey || process.env.EXPO_PUBLIC_GOOGLE_API_KEY || process.env.GOOGLE_API_KEY || '';
     
     if (!this.apiKey) {
-      console.warn('Google AI API key not found. Please ensure GOOGLE_API_KEY is set in your .env file.');
+      console.warn('Google AI API key not found. Please ensure EXPO_PUBLIC_GOOGLE_API_KEY is set in your .env file.');
     } else {
       console.log('Google AI API key loaded successfully');
     }

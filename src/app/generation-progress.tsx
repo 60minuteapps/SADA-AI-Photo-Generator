@@ -5,8 +5,9 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { theme, globalStyles } from '../constants/theme';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { Gender, StyleType } from '../types';
+import { Gender, StyleType, GeneratedPhoto } from '../types';
 import googleAIService from '../services/googleAI';
+import { supabaseService } from '../services/supabase';
 
 interface GenerationStep {
   id: string;
@@ -27,6 +28,7 @@ export default function GenerationProgressScreen() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedImages, setGeneratedImages] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [generatedPhotoRecord, setGeneratedPhotoRecord] = useState<GeneratedPhoto | null>(null);
 
   const steps: GenerationStep[] = [
     {
@@ -71,9 +73,47 @@ export default function GenerationProgressScreen() {
     const imageList = JSON.parse(images);
 
     try {
+      // Create initial database record
+      const promptUsed = `Professional ${style.replace('_', ' ')} style photo for ${modelName} (${gender})`;
+      const { photo: dbRecord, error: dbError } = await supabaseService.createGeneratedPhoto({
+        promptUsed,
+        metadata: {
+          modelName,
+          style,
+          gender,
+          trainingImageCount: imageList.length
+        }
+      });
+
+      if (dbError || !dbRecord) {
+        throw new Error(`Failed to create database record: ${dbError}`);
+      }
+
+      setGeneratedPhotoRecord(dbRecord);
+
       // Step 1: Processing Images
       setCurrentStep(0);
       updateStepCompletion(0, false);
+      
+      // Update status to processing
+      await supabaseService.updateGeneratedPhoto(dbRecord.id, {
+        generationStatus: 'processing'
+      });
+      
+      // Upload training images to storage
+      const uploadedImageUrls: string[] = [];
+      for (let i = 0; i < imageList.length; i++) {
+        const imageUri = imageList[i];
+        const fileName = `training_${i + 1}_${Date.now()}.jpg`;
+        const { url, error: uploadError } = await supabaseService.uploadImage(imageUri, fileName, 'user-photos');
+        
+        if (uploadError || !url) {
+          console.warn(`Failed to upload training image ${i + 1}:`, uploadError);
+        } else {
+          uploadedImageUrls.push(url);
+        }
+      }
+
       await simulateDelay(2000);
       updateStepCompletion(0, true);
 
@@ -95,7 +135,36 @@ export default function GenerationProgressScreen() {
       });
 
       if (result.success) {
-        setGeneratedImages(result.generatedImages);
+        // Upload generated images to Supabase storage
+        const uploadedGeneratedUrls: string[] = [];
+        for (let i = 0; i < result.generatedImages.length; i++) {
+          const imageUrl = result.generatedImages[i];
+          
+          try {
+            // For mock URLs, we'll store them directly
+            // In production, you'd download and re-upload to your storage
+            uploadedGeneratedUrls.push(imageUrl);
+          } catch (uploadError) {
+            console.warn(`Failed to process generated image ${i + 1}:`, uploadError);
+            uploadedGeneratedUrls.push(imageUrl); // Fallback to original URL
+          }
+        }
+
+        // Update database record with generated image URLs
+        const { photo: updatedRecord, error: updateError } = await supabaseService.updateGeneratedPhoto(
+          dbRecord.id,
+          {
+            generatedPhotoUrl: uploadedGeneratedUrls[0], // Primary generated image
+            generationStatus: 'completed',
+            completedAt: new Date()
+          }
+        );
+
+        if (updateError) {
+          console.warn('Failed to update database record:', updateError);
+        }
+
+        setGeneratedImages(uploadedGeneratedUrls);
         updateStepCompletion(2, true);
         
         // Step 4: Complete
@@ -107,17 +176,34 @@ export default function GenerationProgressScreen() {
           router.replace({
             pathname: '/(tabs)/profile',
             params: { 
-              newPhotos: JSON.stringify(result.generatedImages),
+              newPhotos: JSON.stringify(uploadedGeneratedUrls),
               modelName,
-              style 
+              style,
+              recordId: dbRecord.id
             }
           });
         }, 2000);
       } else {
+        // Update database record with error
+        await supabaseService.updateGeneratedPhoto(dbRecord.id, {
+          generationStatus: 'failed',
+          completedAt: new Date()
+        });
+        
         throw new Error(result.error || 'Generation failed');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred during generation');
+      const errorMessage = err instanceof Error ? err.message : 'An error occurred during generation';
+      
+      // Update database record with error if we have one
+      if (generatedPhotoRecord) {
+        await supabaseService.updateGeneratedPhoto(generatedPhotoRecord.id, {
+          generationStatus: 'failed',
+          completedAt: new Date()
+        });
+      }
+      
+      setError(errorMessage);
       setIsGenerating(false);
     }
   };
