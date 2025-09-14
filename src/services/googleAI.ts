@@ -22,9 +22,14 @@ class GoogleAIService {
   private baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
 
   constructor() {
+    // First try to get from Expo Constants (which reads from app.json extra config)
+    // Then fallback to process.env for development
     this.apiKey = Constants.expoConfig?.extra?.googleApiKey || process.env.GOOGLE_API_KEY || '';
+    
     if (!this.apiKey) {
-      console.warn('Google AI API key not found. Please set GOOGLE_API_KEY in your environment.');
+      console.warn('Google AI API key not found. Please ensure GOOGLE_API_KEY is set in your .env file.');
+    } else {
+      console.log('Google AI API key loaded successfully');
     }
   }
 
