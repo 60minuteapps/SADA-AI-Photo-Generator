@@ -173,14 +173,19 @@ export default function ProfileScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              // In a full implementation, you'd delete the database records here
-              // For now, just clear the local state
+              // Delete all generated photos from database
+              const { error } = await supabaseService.deleteSessionGeneratedPhotos();
+              
+              if (error) {
+                console.error('Error deleting generated photos:', error);
+                Alert.alert('Error', 'Failed to delete AI model. Please try again.');
+                return;
+              }
+              
+              // Clear local state after successful database deletion
               setAiModelName('');
               setGeneratedPhotos([]);
               setUploadedImages([]);
-              
-              // Optionally reload from database to ensure consistency
-              await loadGeneratedPhotos();
             } catch (error) {
               console.error('Error deleting AI model:', error);
               Alert.alert('Error', 'Failed to delete AI model. Please try again.');

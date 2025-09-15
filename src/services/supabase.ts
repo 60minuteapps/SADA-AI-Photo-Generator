@@ -330,6 +330,28 @@ class SupabaseService {
     }
   }
 
+  async deleteSessionGeneratedPhotos(): Promise<{ error: string | null }> {
+    try {
+      const session = await this.getCurrentSession();
+      if (!session) {
+        return { error: 'No active session' };
+      }
+
+      const { error } = await supabase
+        .from('generated_photos')
+        .delete()
+        .eq('session_id', session.id);
+
+      if (error) {
+        return { error: error.message };
+      }
+
+      return { error: null };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
   // File Upload
   async uploadImage(uri: string, fileName: string, bucket: 'user-photos' | 'generated-photos' = 'user-photos'): Promise<{ url: string | null; error: string | null }> {
     try {
