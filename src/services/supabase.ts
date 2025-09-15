@@ -360,15 +360,42 @@ class SupabaseService {
         return { url: null, error: 'No active session' };
       }
 
-      // Convert URI to blob for upload
-      const response = await fetch(uri);
-      const blob = await response.blob();
+      let uploadData: Blob | ArrayBuffer;
+      
+      if (uri.startsWith('data:')) {
+        // Handle data URLs - convert base64 to blob
+        const response = await fetch(uri);
+        if (!response.ok) {
+          throw new Error(`Failed to process data URL: ${response.statusText}`);
+        }
+        uploadData = await response.blob();
+      } else if (uri.startsWith('file://')) {
+        // Handle file:// URLs - read as ArrayBuffer for React Native
+        try {
+          const response = await fetch(uri);
+          if (!response.ok) {
+            throw new Error(`Failed to read file: ${response.statusText}`);
+          }
+          uploadData = await response.arrayBuffer();
+        } catch (fetchError) {
+          // Fallback: try to create blob from file URI
+          const response = await fetch(uri);
+          uploadData = await response.blob();
+        }
+      } else {
+        // Handle HTTP URLs
+        const response = await fetch(uri);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch image: ${response.statusText}`);
+        }
+        uploadData = await response.blob();
+      }
 
       const filePath = `${session.id}/${fileName}`;
 
       const { data, error } = await supabase.storage
         .from(bucket)
-        .upload(filePath, blob);
+        .upload(filePath, uploadData);
 
       if (error) {
         return { url: null, error: error.message };
@@ -380,7 +407,8 @@ class SupabaseService {
 
       return { url: publicUrl, error: null };
     } catch (error) {
-      return { url: null, error: error instanceof Error ? error.message : 'Unknown error' };
+      console.error('❌ Upload error:', error);
+      return { url: null, error: error instanceof Error ? error.message : 'Unknown upload error' };
     }
   }
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Alert } from 'react-native';
+import { View, Text, StyleSheet, Alert, ScrollView } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { theme, globalStyles } from '../constants/theme';
@@ -24,6 +25,7 @@ export default function GenerationProgressScreen() {
     style: StyleType;
   }>();
   
+  const insets = useSafeAreaInsets();
   const [currentStep, setCurrentStep] = useState(0);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedImages, setGeneratedImages] = useState<string[]>([]);
@@ -239,8 +241,12 @@ export default function GenerationProgressScreen() {
   };
 
   return (
-    <View style={globalStyles.container}>
-      <View style={styles.container}>
+    <View style={[globalStyles.container, { paddingTop: insets.top + 20 }]}>
+      <ScrollView 
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Header */}
         <View style={styles.header}>
           <Text style={globalStyles.title}>Generating Your Photos</Text>
@@ -352,12 +358,19 @@ export default function GenerationProgressScreen() {
             />
           </View>
         )}
-      </View>
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: theme.spacing.md,
+    paddingBottom: theme.spacing.xl,
+  },
   container: {
     flex: 1,
     padding: theme.spacing.md,
