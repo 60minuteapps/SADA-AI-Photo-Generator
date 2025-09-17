@@ -102,6 +102,17 @@ export interface PromptTemplate {
 export type Gender = 'male' | 'female';
 export type StyleType = 'business_suit' | 'office_professional' | 'street_casual' | 'business_casual';
 
+export interface TrainingImage {
+  id: string;
+  sessionId: string;
+  imageUrl: string;
+  filePath?: string;
+  displayOrder: number;
+  metadata?: Record<string, any>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface NavigationParams {
   package: string;
   gender: Gender;

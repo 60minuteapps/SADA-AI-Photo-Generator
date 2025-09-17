@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
-import { UserSession, DBPhotoPackage, PhotoPackage, GeneratedPhoto } from '../types';
+import { UserSession, DBPhotoPackage, PhotoPackage, GeneratedPhoto, TrainingImage } from '../types';
 import Constants from 'expo-constants';
 
 // Get environment variables with runtime check
@@ -421,6 +421,200 @@ class SupabaseService {
       return { error: error?.message || null };
     } catch (error) {
       return { error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  // Training Images Management
+  async saveTrainingImage(imageUri: string, displayOrder: number): Promise<{ trainingImage: TrainingImage | null; error: string | null }> {
+    try {
+      const session = await this.getCurrentSession();
+      if (!session) {
+        return { trainingImage: null, error: 'No active session' };
+      }
+
+      // Upload image to storage
+      const fileName = `training_${displayOrder}_${Date.now()}.jpg`;
+      const { url, error: uploadError } = await this.uploadImage(imageUri, fileName, 'user-photos');
+      
+      if (uploadError || !url) {
+        return { trainingImage: null, error: uploadError || 'Failed to upload image' };
+      }
+
+      // Save to database
+      const { data, error } = await supabase
+        .from('training_images')
+        .insert({
+          session_id: session.id,
+          image_url: url,
+          file_path: `${session.id}/${fileName}`,
+          display_order: displayOrder,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        return { trainingImage: null, error: error.message };
+      }
+
+      const trainingImage: TrainingImage = {
+        id: data.id,
+        sessionId: data.session_id,
+        imageUrl: data.image_url,
+        filePath: data.file_path,
+        displayOrder: data.display_order,
+        metadata: data.metadata,
+        createdAt: new Date(data.created_at),
+        updatedAt: new Date(data.updated_at),
+      };
+
+      return { trainingImage, error: null };
+    } catch (error) {
+      return { trainingImage: null, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  async getTrainingImages(): Promise<{ images: TrainingImage[]; error: string | null }> {
+    try {
+      const session = await this.getCurrentSession();
+      if (!session) {
+        return { images: [], error: 'No active session' };
+      }
+
+      const { data, error } = await supabase
+        .from('training_images')
+        .select('*')
+        .eq('session_id', session.id)
+        .order('display_order', { ascending: true });
+
+      if (error) {
+        return { images: [], error: error.message };
+      }
+
+      const images: TrainingImage[] = data.map(item => ({
+        id: item.id,
+        sessionId: item.session_id,
+        imageUrl: item.image_url,
+        filePath: item.file_path,
+        displayOrder: item.display_order,
+        metadata: item.metadata,
+        createdAt: new Date(item.created_at),
+        updatedAt: new Date(item.updated_at),
+      }));
+
+      return { images, error: null };
+    } catch (error) {
+      return { images: [], error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  async deleteTrainingImage(id: string): Promise<{ error: string | null }> {
+    try {
+      const session = await this.getCurrentSession();
+      if (!session) {
+        return { error: 'No active session' };
+      }
+
+      // Get the training image to delete the file
+      const { data: trainingImage, error: fetchError } = await supabase
+        .from('training_images')
+        .select('file_path')
+        .eq('id', id)
+        .eq('session_id', session.id)
+        .single();
+
+      if (fetchError) {
+        return { error: fetchError.message };
+      }
+
+      // Delete from storage if file path exists
+      if (trainingImage?.file_path) {
+        await this.deleteImage(trainingImage.file_path, 'user-photos');
+      }
+
+      // Delete from database
+      const { error } = await supabase
+        .from('training_images')
+        .delete()
+        .eq('id', id)
+        .eq('session_id', session.id);
+
+      if (error) {
+        return { error: error.message };
+      }
+
+      return { error: null };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  async deleteAllTrainingImages(): Promise<{ error: string | null }> {
+    try {
+      const session = await this.getCurrentSession();
+      if (!session) {
+        return { error: 'No active session' };
+      }
+
+      // Get all training images to delete files
+      const { data: trainingImages, error: fetchError } = await supabase
+        .from('training_images')
+        .select('file_path')
+        .eq('session_id', session.id);
+
+      if (fetchError) {
+        return { error: fetchError.message };
+      }
+
+      // Delete files from storage
+      for (const image of trainingImages || []) {
+        if (image.file_path) {
+          await this.deleteImage(image.file_path, 'user-photos');
+        }
+      }
+
+      // Delete from database
+      const { error } = await supabase
+        .from('training_images')
+        .delete()
+        .eq('session_id', session.id);
+
+      if (error) {
+        return { error: error.message };
+      }
+
+      return { error: null };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  async saveMultipleTrainingImages(imageUris: string[]): Promise<{ images: TrainingImage[]; error: string | null }> {
+    try {
+      const session = await this.getCurrentSession();
+      if (!session) {
+        return { images: [], error: 'No active session' };
+      }
+
+      // Clear existing training images first
+      await this.deleteAllTrainingImages();
+
+      const savedImages: TrainingImage[] = [];
+      
+      for (let i = 0; i < imageUris.length; i++) {
+        const { trainingImage, error } = await this.saveTrainingImage(imageUris[i], i);
+        
+        if (error || !trainingImage) {
+          // If any image fails, clean up and return error
+          await this.deleteAllTrainingImages();
+          return { images: [], error: error || 'Failed to save training image' };
+        }
+        
+        savedImages.push(trainingImage);
+      }
+
+      return { images: savedImages, error: null };
+    } catch (error) {
+      return { images: [], error: error instanceof Error ? error.message : 'Unknown error' };
     }
   }
 

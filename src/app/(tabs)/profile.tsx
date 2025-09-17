@@ -11,7 +11,7 @@ import { theme, globalStyles } from '../../constants/theme';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { supabaseService } from '../../services/supabase';
-import { GeneratedPhoto as DBGeneratedPhoto } from '../../types';
+import { GeneratedPhoto as DBGeneratedPhoto, TrainingImage } from '../../types';
 
 interface UploadedImage {
   id: string;
@@ -35,6 +35,8 @@ export default function ProfileScreen() {
   }>();
   
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
+  const [trainingImages, setTrainingImages] = useState<TrainingImage[]>([]);
+  const [isSavingImages, setIsSavingImages] = useState(false);
   const [generatedPhotos, setGeneratedPhotos] = useState<GeneratedPhoto[]>([]);
   const [aiModelName, setAiModelName] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
@@ -42,9 +44,10 @@ export default function ProfileScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
 
-  // Load generated photos from database
+  // Load generated photos and training images from database
   useEffect(() => {
     loadGeneratedPhotos();
+    loadTrainingImages();
   }, []);
 
   // Handle new photos from generation (fallback for URL params)
@@ -100,6 +103,29 @@ export default function ProfileScreen() {
     }
   };
 
+  const loadTrainingImages = async () => {
+    try {
+      const { images, error } = await supabaseService.getTrainingImages();
+      
+      if (error) {
+        console.error('Error loading training images:', error);
+        return;
+      }
+
+      setTrainingImages(images);
+      
+      // Convert training images to uploaded images format for UI compatibility
+      const uiImages: UploadedImage[] = images.map(img => ({
+        id: img.id,
+        uri: img.imageUrl,
+      }));
+      
+      setUploadedImages(uiImages);
+    } catch (error) {
+      console.error('Error loading training images:', error);
+    }
+  };
+
   const pickImages = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     
@@ -121,6 +147,9 @@ export default function ProfileScreen() {
         uri: asset.uri,
       }));
       setUploadedImages(prev => [...prev, ...newImages]);
+      
+      // Save images to database
+      await saveTrainingImages([...uploadedImages, ...newImages]);
     }
   };
 
@@ -142,12 +171,50 @@ export default function ProfileScreen() {
         id: `${Date.now()}`,
         uri: result.assets[0].uri,
       };
-      setUploadedImages(prev => [...prev, newImage]);
+      const updatedImages = [...uploadedImages, newImage];
+      setUploadedImages(updatedImages);
+      
+      // Save images to database
+      await saveTrainingImages(updatedImages);
     }
   };
 
-  const removeImage = (id: string) => {
-    setUploadedImages(prev => prev.filter(img => img.id !== id));
+  const removeImage = async (id: string) => {
+    const updatedImages = uploadedImages.filter(img => img.id !== id);
+    setUploadedImages(updatedImages);
+    
+    // Find and delete from database if it's a saved training image
+    const trainingImage = trainingImages.find(img => img.id === id);
+    if (trainingImage) {
+      await supabaseService.deleteTrainingImage(trainingImage.id);
+      setTrainingImages(prev => prev.filter(img => img.id !== id));
+    }
+    
+    // Save remaining images to database
+    await saveTrainingImages(updatedImages);
+  };
+
+  const saveTrainingImages = async (images: UploadedImage[]) => {
+    if (images.length === 0) return;
+    
+    try {
+      setIsSavingImages(true);
+      const imageUris = images.map(img => img.uri);
+      const { images: savedImages, error } = await supabaseService.saveMultipleTrainingImages(imageUris);
+      
+      if (error) {
+        console.error('Error saving training images:', error);
+        Alert.alert('Error', 'Failed to save training images. Please try again.');
+        return;
+      }
+      
+      setTrainingImages(savedImages);
+    } catch (error) {
+      console.error('Error saving training images:', error);
+      Alert.alert('Error', 'Failed to save training images. Please try again.');
+    } finally {
+      setIsSavingImages(false);
+    }
   };
 
   const showImageOptions = () => {
@@ -191,6 +258,13 @@ export default function ProfileScreen() {
               setAiModelName('');
               setGeneratedPhotos([]);
               setUploadedImages([]);
+              
+              // Also delete training images
+              const { error: trainingError } = await supabaseService.deleteAllTrainingImages();
+              if (trainingError) {
+                console.error('Error deleting training images:', trainingError);
+              }
+              setTrainingImages([]);
             } catch (error) {
               console.error('Error deleting AI model:', error);
               Alert.alert('Error', 'Failed to delete AI model. Please try again.');
@@ -306,16 +380,32 @@ export default function ProfileScreen() {
                 <TouchableOpacity
                   style={styles.removeButton}
                   onPress={() => removeImage(image.id)}
+                  disabled={isSavingImages}
                 >
                   <MaterialIcons name="close" size={16} color={theme.colors.white} />
                 </TouchableOpacity>
+                {isSavingImages && (
+                  <View style={styles.savingIndicator}>
+                    <MaterialIcons name="hourglass-empty" size={12} color={theme.colors.accent} />
+                  </View>
+                )}
               </View>
             ))}
             
             {uploadedImages.length < 3 && (
-              <TouchableOpacity style={styles.addImageButton} onPress={showImageOptions}>
-                <MaterialIcons name="add" size={32} color={theme.colors.textSecondary} />
-                <Text style={styles.addImageText}>Add Photo</Text>
+              <TouchableOpacity 
+                style={styles.addImageButton} 
+                onPress={showImageOptions}
+                disabled={isSavingImages}
+              >
+                <MaterialIcons 
+                  name={isSavingImages ? "hourglass-empty" : "add"} 
+                  size={32} 
+                  color={isSavingImages ? theme.colors.accent : theme.colors.textSecondary} 
+                />
+                <Text style={styles.addImageText}>
+                  {isSavingImages ? 'Saving...' : 'Add Photo'}
+                </Text>
               </TouchableOpacity>
             )}
           </View>
@@ -535,6 +625,19 @@ const styles = StyleSheet.create({
     ...globalStyles.caption,
     marginTop: theme.spacing.xs,
     textAlign: 'center',
+  },
+  savingIndicator: {
+    position: 'absolute',
+    bottom: -8,
+    right: -8,
+    backgroundColor: theme.colors.background,
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: theme.colors.accent,
   },
   helperText: {
     ...globalStyles.caption,

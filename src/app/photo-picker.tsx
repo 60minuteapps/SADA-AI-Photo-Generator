@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { Image } from 'expo-image';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -7,6 +7,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { theme, globalStyles } from '../constants/theme';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
+import { supabaseService } from '../services/supabase';
+import { TrainingImage } from '../types';
 
 interface SelectedImage {
   id: string;
@@ -15,6 +17,66 @@ interface SelectedImage {
 
 export default function PhotoPickerScreen() {
   const [selectedImages, setSelectedImages] = useState<SelectedImage[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSavingImages, setIsSavingImages] = useState(false);
+
+  // Load existing training images on component mount
+  useEffect(() => {
+    loadTrainingImages();
+  }, []);
+
+  const loadTrainingImages = async () => {
+    try {
+      setIsLoading(true);
+      const { images, error } = await supabaseService.getTrainingImages();
+      
+      if (error) {
+        console.error('Error loading training images:', error);
+        return;
+      }
+
+      // Convert training images to selected images format
+      const preSelectedImages: SelectedImage[] = images.map(img => ({
+        id: img.id,
+        uri: img.imageUrl,
+      }));
+      
+      setSelectedImages(preSelectedImages);
+    } catch (error) {
+      console.error('Error loading training images:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const saveTrainingImages = async (images: SelectedImage[]) => {
+    if (images.length === 0) return;
+    
+    try {
+      setIsSavingImages(true);
+      const imageUris = images.map(img => img.uri);
+      const { images: savedImages, error } = await supabaseService.saveMultipleTrainingImages(imageUris);
+      
+      if (error) {
+        console.error('Error saving training images:', error);
+        Alert.alert('Error', 'Failed to save training images. Please try again.');
+        return;
+      }
+      
+      // Update selected images with database IDs
+      const updatedImages: SelectedImage[] = savedImages.map(img => ({
+        id: img.id,
+        uri: img.imageUrl,
+      }));
+      
+      setSelectedImages(updatedImages);
+    } catch (error) {
+      console.error('Error saving training images:', error);
+      Alert.alert('Error', 'Failed to save training images. Please try again.');
+    } finally {
+      setIsSavingImages(false);
+    }
+  };
 
   const pickFromLibrary = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -36,7 +98,11 @@ export default function PhotoPickerScreen() {
         id: `${Date.now()}_${index}`,
         uri: asset.uri,
       }));
-      setSelectedImages(prev => [...prev, ...newImages]);
+      const updatedImages = [...selectedImages, ...newImages];
+      setSelectedImages(updatedImages);
+      
+      // Save to database
+      await saveTrainingImages(updatedImages);
     }
   };
 
@@ -58,12 +124,29 @@ export default function PhotoPickerScreen() {
         id: `${Date.now()}`,
         uri: result.assets[0].uri,
       };
-      setSelectedImages(prev => [...prev, newImage]);
+      const updatedImages = [...selectedImages, newImage];
+      setSelectedImages(updatedImages);
+      
+      // Save to database
+      await saveTrainingImages(updatedImages);
     }
   };
 
-  const removeImage = (id: string) => {
-    setSelectedImages(prev => prev.filter(img => img.id !== id));
+  const removeImage = async (id: string) => {
+    const updatedImages = selectedImages.filter(img => img.id !== id);
+    setSelectedImages(updatedImages);
+    
+    // Delete from database if it's a saved training image
+    try {
+      await supabaseService.deleteTrainingImage(id);
+    } catch (error) {
+      console.error('Error deleting training image:', error);
+    }
+    
+    // Save remaining images to database
+    if (updatedImages.length > 0) {
+      await saveTrainingImages(updatedImages);
+    }
   };
 
   const handleContinue = () => {
@@ -99,7 +182,10 @@ export default function PhotoPickerScreen() {
         <View style={styles.header}>
           <Text style={globalStyles.title}>Select Training Photos</Text>
           <Text style={globalStyles.body}>
-            Choose 3 high-quality photos of yourself for the best AI model training results
+            {selectedImages.length > 0 
+              ? 'Your saved training photos are pre-selected. Add or remove photos as needed.'
+              : 'Choose 3 high-quality photos of yourself for the best AI model training results'
+            }
           </Text>
         </View>
 
@@ -130,9 +216,23 @@ export default function PhotoPickerScreen() {
         <Card style={styles.imagesCard}>
           <View style={styles.imagesHeader}>
             <Text style={globalStyles.subtitle}>Selected Photos</Text>
-            <Text style={styles.imageCount}>{selectedImages.length}/3</Text>
+            <View style={styles.headerRight}>
+              {isSavingImages && (
+                <View style={styles.savingIndicator}>
+                  <MaterialIcons name="hourglass-empty" size={16} color={theme.colors.accent} />
+                  <Text style={styles.savingText}>Saving...</Text>
+                </View>
+              )}
+              <Text style={styles.imageCount}>{selectedImages.length}/3</Text>
+            </View>
           </View>
           
+          {isLoading ? (
+            <View style={styles.loadingContainer}>
+              <MaterialIcons name="hourglass-empty" size={24} color={theme.colors.accent} />
+              <Text style={styles.loadingText}>Loading your training photos...</Text>
+            </View>
+          ) : (
           <View style={styles.imageGrid}>
             {selectedImages.map((image) => (
               <View key={image.id} style={styles.imageContainer}>
@@ -140,6 +240,7 @@ export default function PhotoPickerScreen() {
                 <TouchableOpacity
                   style={styles.removeButton}
                   onPress={() => removeImage(image.id)}
+                  disabled={isSavingImages}
                 >
                   <MaterialIcons name="close" size={16} color={theme.colors.white} />
                 </TouchableOpacity>
@@ -151,13 +252,19 @@ export default function PhotoPickerScreen() {
                 key={`placeholder-${index}`}
                 style={styles.addImageButton} 
                 onPress={showImageOptions}
+                disabled={isSavingImages}
               >
                 <View style={styles.addIconContainer}>
-                  <MaterialIcons name="add" size={32} color={theme.colors.textSecondary} />
+                  <MaterialIcons 
+                    name={isSavingImages ? "hourglass-empty" : "add"} 
+                    size={32} 
+                    color={isSavingImages ? theme.colors.accent : theme.colors.textSecondary} 
+                  />
                 </View>
               </TouchableOpacity>
             ))}
           </View>
+          )}
 
           {selectedImages.length > 0 && selectedImages.length < 3 && (
             <Text style={styles.helperText}>
@@ -173,12 +280,14 @@ export default function PhotoPickerScreen() {
             onPress={takePhoto}
             variant="outline"
             style={styles.actionButton}
+            disabled={isSavingImages || selectedImages.length >= 3}
           />
           <Button
             title="Choose from Library"
             onPress={pickFromLibrary}
             variant="secondary"
             style={styles.actionButton}
+            disabled={isSavingImages || selectedImages.length >= 3}
           />
         </View>
 
@@ -321,5 +430,31 @@ const styles = StyleSheet.create({
   tip: {
     ...globalStyles.caption,
     lineHeight: 20,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+  },
+  savingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.xs,
+  },
+  savingText: {
+    ...globalStyles.caption,
+    color: theme.colors.accent,
+    fontSize: 12,
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: theme.spacing.xl,
+    gap: theme.spacing.sm,
+  },
+  loadingText: {
+    ...globalStyles.body,
+    color: theme.colors.accent,
   },
 });
