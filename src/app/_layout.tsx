@@ -42,20 +42,9 @@ export default function RootLayout() {
           />
           <Stack.Screen 
             name="package/[id]" 
-            options={{
+            options={{ 
               title: 'Package Details',
-              headerLeft: () => (
-                <TouchableOpacity 
-                  onPress={() => router.back()}
-                  style={{ marginLeft: 16, padding: 8 }}
-                >
-                  <MaterialIcons 
-                    name="arrow-back" 
-                    size={24} 
-                    color={theme.colors.text} 
-                  />
-                </TouchableOpacity>
-              ),
+              headerBackTitle: 'Back',
             }} 
           />
           <Stack.Screen 

@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, Dimensions, StatusBar } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, Dimensions, StatusBar, FlatList } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -11,6 +11,7 @@ import { theme, globalStyles } from '../../constants/theme';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { supabaseService } from '../../services/supabase';
+import { imageStorageService } from '../../services/imageStorage';
 import { GeneratedPhoto as DBGeneratedPhoto, TrainingImage } from '../../types';
 
 interface UploadedImage {
@@ -41,13 +42,17 @@ export default function ProfileScreen() {
   const [aiModelName, setAiModelName] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
   const [selectedImage, setSelectedImage] = useState<GeneratedPhoto | null>(null);
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [modalVisible, setModalVisible] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [imageLoadingStates, setImageLoadingStates] = useState<Record<string, boolean>>({});
+  const flatListRef = useRef<FlatList>(null);
 
-  // Load generated photos and training images from database
+  // Load generated photos and training images from AsyncStorage
   useEffect(() => {
     loadGeneratedPhotos();
     loadTrainingImages();
+    loadAIModelName();
   }, []);
 
   // Handle new photos from generation (fallback for URL params)
@@ -80,7 +85,7 @@ export default function ProfileScreen() {
         return;
       }
 
-      // Convert database photos to UI format
+      // Convert stored photos to UI format
       const uiPhotos: GeneratedPhoto[] = photos
         .filter(photo => photo.generatedPhotoUrl) // Only show completed photos
         .map(photo => ({
@@ -91,11 +96,6 @@ export default function ProfileScreen() {
         }));
 
       setGeneratedPhotos(uiPhotos);
-
-      // Set AI model name from the most recent photo
-      if (photos.length > 0 && photos[0].metadata?.modelName) {
-        setAiModelName(photos[0].metadata.modelName);
-      }
     } catch (error) {
       console.error('Error loading generated photos:', error);
     } finally {
@@ -117,12 +117,23 @@ export default function ProfileScreen() {
       // Convert training images to uploaded images format for UI compatibility
       const uiImages: UploadedImage[] = images.map(img => ({
         id: img.id,
-        uri: img.imageUrl,
+        uri: img.imageUrl, // This is now the local file path
       }));
       
       setUploadedImages(uiImages);
     } catch (error) {
       console.error('Error loading training images:', error);
+    }
+  };
+
+  const loadAIModelName = async () => {
+    try {
+      const modelName = await imageStorageService.getAIModelName();
+      if (modelName) {
+        setAiModelName(modelName);
+      }
+    } catch (error) {
+      console.error('Error loading AI model name:', error);
     }
   };
 
@@ -265,6 +276,13 @@ export default function ProfileScreen() {
                 console.error('Error deleting training images:', trainingError);
               }
               setTrainingImages([]);
+              
+              // Clear all local storage
+              try {
+                await imageStorageService.clearAllData();
+              } catch (storageError) {
+                console.warn('Failed to clear local storage:', storageError);
+              }
             } catch (error) {
               console.error('Error deleting AI model:', error);
               Alert.alert('Error', 'Failed to delete AI model. Please try again.');
@@ -276,7 +294,8 @@ export default function ProfileScreen() {
   };
 
   const downloadImage = async () => {
-    if (!selectedImage) return;
+    const currentImage = generatedPhotos[selectedImageIndex];
+    if (!currentImage) return;
     
     try {
       setIsDownloading(true);
@@ -290,22 +309,22 @@ export default function ProfileScreen() {
 
       // Generate filename with timestamp and style
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const fileName = `AI_Portrait_${selectedImage.style}_${timestamp}.jpg`;
+      const fileName = `AI_Portrait_${currentImage.style}_${timestamp}.jpg`;
       const fileUri = `${FileSystem.documentDirectory}${fileName}`;
 
       let finalUri: string;
 
       // Handle data URLs (base64) differently from regular URLs
-      if (selectedImage.uri.startsWith('data:')) {
+      if (currentImage.uri.startsWith('data:')) {
         // Convert data URL to file
-        const base64Data = selectedImage.uri.split(',')[1];
+        const base64Data = currentImage.uri.split(',')[1];
         await FileSystem.writeAsStringAsync(fileUri, base64Data, {
           encoding: FileSystem.EncodingType.Base64,
         });
         finalUri = fileUri;
       } else {
         // Regular URL - use downloadAsync
-        const downloadResult = await FileSystem.downloadAsync(selectedImage.uri, fileUri);
+        const downloadResult = await FileSystem.downloadAsync(currentImage.uri, fileUri);
         if (downloadResult.status !== 200) {
           throw new Error('Download failed');
         }
@@ -343,7 +362,7 @@ export default function ProfileScreen() {
   };
 
   return (
-    <SafeAreaView style={globalStyles.safeArea} edges={['left', 'right']}>
+    <View style={globalStyles.safeArea}>
       <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
         {/* AI Model Section */}
         <Card style={styles.section}>
@@ -375,8 +394,19 @@ export default function ProfileScreen() {
           
           <View style={styles.imageGrid}>
             {uploadedImages.map((image) => (
-              <View key={image.id} style={styles.imageContainer}>
-                <Image source={{ uri: image.uri }} style={styles.uploadedImage} />
+              <View key={image.id} style={styles.gridImageContainer}>
+                <Image 
+                  source={{ uri: image.uri }} 
+                  style={styles.uploadedImage}
+                  onLoadStart={() => setImageLoadingStates(prev => ({ ...prev, [image.id]: true }))}
+                  onLoad={() => setImageLoadingStates(prev => ({ ...prev, [image.id]: false }))}
+                  onError={() => setImageLoadingStates(prev => ({ ...prev, [image.id]: false }))}
+                />
+                {imageLoadingStates[image.id] && (
+                  <View style={styles.imageLoadingIndicator}>
+                    <MaterialIcons name="hourglass-empty" size={16} color={theme.colors.accent} />
+                  </View>
+                )}
                 <TouchableOpacity
                   style={styles.removeButton}
                   onPress={() => removeImage(image.id)}
@@ -432,12 +462,25 @@ export default function ProfileScreen() {
                   key={photo.id} 
                   style={styles.photoContainer}
                   onPress={() => {
+                    const index = generatedPhotos.findIndex(p => p.id === photo.id);
+                    setSelectedImageIndex(index);
                     setSelectedImage(photo);
                     setModalVisible(true);
                   }}
                   activeOpacity={0.8}
                 >
-                  <Image source={{ uri: photo.uri }} style={styles.generatedPhoto} />
+                  <Image 
+                    source={{ uri: photo.uri }} 
+                    style={styles.generatedPhoto}
+                    onLoadStart={() => setImageLoadingStates(prev => ({ ...prev, [photo.id]: true }))}
+                    onLoad={() => setImageLoadingStates(prev => ({ ...prev, [photo.id]: false }))}
+                    onError={() => setImageLoadingStates(prev => ({ ...prev, [photo.id]: false }))}
+                  />
+                  {imageLoadingStates[photo.id] && (
+                    <View style={styles.imageLoadingOverlay}>
+                      <MaterialIcons name="hourglass-empty" size={20} color={theme.colors.accent} />
+                    </View>
+                  )}
                   <Text style={styles.photoStyle}>{photo.style.replace('_', ' ')}</Text>
                   <Text style={styles.photoDate}>
                     {photo.createdAt.toLocaleDateString()}
@@ -462,8 +505,7 @@ export default function ProfileScreen() {
             <Button
               title="Generate Professional Photos"
               onPress={() => {
-                // Navigate to package selection
-                console.log('Navigate to explore screen');
+                router.push('/(tabs)/explore');
               }}
               size="large"
             />
@@ -503,40 +545,77 @@ export default function ProfileScreen() {
               />
             </TouchableOpacity>
             
-            {/* Image */}
-            {selectedImage && (
-              <View style={styles.imageWrapper}>
-                <Image 
-                  source={{ uri: selectedImage.uri }} 
-                  style={styles.fullScreenImage}
-                  contentFit="contain"
-                />
-                
-                {/* Image Info */}
-                <View style={styles.imageInfo}>
-                  <Text style={styles.modalImageStyle}>
-                    {selectedImage.style.replace('_', ' ').toUpperCase()}
-                  </Text>
-                  <Text style={styles.modalImageDate}>
-                    Generated on {selectedImage.createdAt.toLocaleDateString('en-US', {
-                      weekday: 'long',
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric'
-                    })}
-                  </Text>
-                  {aiModelName && (
-                    <Text style={styles.modalModelName}>
-                      Model: {aiModelName}
-                    </Text>
-                  )}
-                </View>
-              </View>
-            )}
+            {/* Swipeable Image Gallery */}
+            <View style={styles.galleryContainer}>
+              <FlatList
+                ref={flatListRef}
+                data={generatedPhotos}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                initialScrollIndex={selectedImageIndex}
+                snapToInterval={Dimensions.get('window').width}
+                snapToAlignment="start"
+                decelerationRate="fast"
+                getItemLayout={(data, index) => ({
+                  length: Dimensions.get('window').width,
+                  offset: Dimensions.get('window').width * index,
+                  index,
+                })}
+                onMomentumScrollEnd={(event) => {
+                  const screenWidth = Dimensions.get('window').width;
+                  const index = Math.round(event.nativeEvent.contentOffset.x / screenWidth);
+                  setSelectedImageIndex(index);
+                  setSelectedImage(generatedPhotos[index]);
+                }}
+                renderItem={({ item: photo }) => (
+                  <View style={styles.gallerySlide}>
+                    <View style={styles.imageContainer}>
+                      <Image 
+                        source={{ uri: photo.uri }} 
+                        style={styles.fullScreenImage}
+                        contentFit="contain"
+                        onLoadStart={() => setImageLoadingStates(prev => ({ ...prev, [`modal_${photo.id}`]: true }))}
+                        onLoad={() => setImageLoadingStates(prev => ({ ...prev, [`modal_${photo.id}`]: false }))}
+                        onError={() => setImageLoadingStates(prev => ({ ...prev, [`modal_${photo.id}`]: false }))}
+                      />
+                      {imageLoadingStates[`modal_${photo.id}`] && (
+                        <View style={styles.modalImageLoading}>
+                          <MaterialIcons name="hourglass-empty" size={32} color={theme.colors.accent} />
+                          <Text style={styles.modalLoadingText}>Loading image...</Text>
+                        </View>
+                      )}
+                    </View>
+                    
+                    {/* Image Info */}
+                    <View style={styles.imageInfo}>
+                      <Text style={styles.modalImageStyle}>
+                        {photo.style.replace('_', ' ').toUpperCase()}
+                      </Text>
+                      <Text style={styles.modalImageDate}>
+                        Generated on {photo.createdAt.toLocaleDateString('en-US', {
+                          weekday: 'long',
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
+                        })}
+                      </Text>
+                      {aiModelName && (
+                        <Text style={styles.modalModelName}>
+                          Model: {aiModelName}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                )}
+                keyExtractor={(item) => item.id}
+              />
+            </View>
+            
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -590,13 +669,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: theme.spacing.md,
+    justifyContent: 'space-between',
   },
-  imageContainer: {
+  gridImageContainer: {
     position: 'relative',
+    width: '30%',
   },
   uploadedImage: {
-    width: 100,
-    height: 100,
+    width: '100%',
+    aspectRatio: 1,
     borderRadius: theme.borderRadius.sm,
   },
   removeButton: {
@@ -611,8 +692,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   addImageButton: {
-    width: 100,
-    height: 100,
+    width: '30%',
+    aspectRatio: 1,
     borderRadius: theme.borderRadius.sm,
     borderWidth: 2,
     borderColor: theme.colors.border,
@@ -648,13 +729,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: theme.spacing.md,
+    justifyContent: 'space-between',
   },
   photoContainer: {
     alignItems: 'center',
+    width: '30%',
   },
   generatedPhoto: {
-    width: 100,
-    height: 100,
+    width: '100%',
+    aspectRatio: 1,
     borderRadius: theme.borderRadius.sm,
   },
   photoStyle: {
@@ -704,27 +787,38 @@ const styles = StyleSheet.create({
     width: '100%',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: theme.spacing.lg,
   },
-  imageWrapper: {
+  galleryContainer: {
     flex: 1,
     width: '100%',
+  },
+  gallerySlide: {
+    width: Dimensions.get('window').width,
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageContainer: {
+    width: '100%',
+    height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
   },
   fullScreenImage: {
-    width: Dimensions.get('window').width - (theme.spacing.lg * 2),
+    width: Dimensions.get('window').width * 0.9,
     height: Dimensions.get('window').height * 0.7,
     borderRadius: theme.borderRadius.lg,
   },
   imageInfo: {
-    marginTop: theme.spacing.xl,
+    position: 'absolute',
+    bottom: 80,
+    left: theme.spacing.lg,
+    right: theme.spacing.lg,
     alignItems: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
     paddingHorizontal: theme.spacing.lg,
     paddingVertical: theme.spacing.md,
     borderRadius: theme.borderRadius.lg,
-    minWidth: '80%',
   },
   modalImageStyle: {
     fontSize: 18,
@@ -776,5 +870,43 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     minWidth: theme.touchTarget.minHeight,
     minHeight: theme.touchTarget.minHeight,
+  },
+  imageLoadingIndicator: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageLoadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    borderRadius: theme.borderRadius.sm,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalImageLoading: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: [{ translateX: -50 }, { translateY: -50 }],
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.lg,
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+  },
+  modalLoadingText: {
+    ...globalStyles.body,
+    color: theme.colors.white,
+    textAlign: 'center',
   },
 });

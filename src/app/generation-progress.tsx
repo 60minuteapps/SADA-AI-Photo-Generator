@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Alert, ScrollView } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, Alert, ScrollView, Animated } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -30,7 +30,10 @@ export default function GenerationProgressScreen() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedImages, setGeneratedImages] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [generatedPhotoRecord, setGeneratedPhotoRecord] = useState<GeneratedPhoto | null>(null);
+  
+  // Animation refs
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const dotsAnim = useRef(new Animated.Value(0)).current;
 
   const steps: GenerationStep[] = [
     {
@@ -65,6 +68,44 @@ export default function GenerationProgressScreen() {
     startGeneration();
   }, []);
 
+  // Start animations when generating
+  useEffect(() => {
+    if (isGenerating && !error) {
+      // Pulse animation for the loading indicator
+      const pulseAnimation = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 0.6,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+
+      // Dots animation for the text
+      const dotsAnimation = Animated.loop(
+        Animated.timing(dotsAnim, {
+          toValue: 3,
+          duration: 1500,
+          useNativeDriver: false,
+        })
+      );
+
+      pulseAnimation.start();
+      dotsAnimation.start();
+
+      return () => {
+        pulseAnimation.stop();
+        dotsAnimation.stop();
+      };
+    }
+  }, [isGenerating, error]);
+
   const startGeneration = async () => {
     if (!images || !gender || !modelName || !style) {
       setError('Missing required parameters');
@@ -75,32 +116,11 @@ export default function GenerationProgressScreen() {
     const imageList = JSON.parse(images);
 
     try {
-      // Create initial database record
       const promptUsed = `Professional ${style.replace('_', ' ')} style photo for ${modelName} (${gender})`;
-      const { photo: dbRecord, error: dbError } = await supabaseService.createGeneratedPhoto({
-        promptUsed,
-        metadata: {
-          modelName,
-          style,
-          gender,
-          trainingImageCount: imageList.length
-        }
-      });
-
-      if (dbError || !dbRecord) {
-        throw new Error(`Failed to create database record: ${dbError}`);
-      }
-
-      setGeneratedPhotoRecord(dbRecord);
 
       // Step 1: Processing Images
       setCurrentStep(0);
       updateStepCompletion(0, false);
-      
-      // Update status to processing
-      await supabaseService.updateGeneratedPhoto(dbRecord.id, {
-        generationStatus: 'processing'
-      });
       
       // Upload training images to storage
       const uploadedImageUrls: string[] = [];
@@ -152,30 +172,15 @@ export default function GenerationProgressScreen() {
           }
         }
 
-        // Create separate database records for each generated image
+        // Save each generated image to AsyncStorage
         const savedPhotos = [];
         for (let i = 0; i < uploadedGeneratedUrls.length; i++) {
           const imageUrl = uploadedGeneratedUrls[i];
           
-          if (i === 0) {
-            // Update the original record with the first image
-            const { photo: updatedRecord, error: updateError } = await supabaseService.updateGeneratedPhoto(
-              dbRecord.id,
-              {
-                generatedPhotoUrl: imageUrl,
-                generationStatus: 'completed',
-                completedAt: new Date()
-              }
-            );
-            
-            if (updateError) {
-              console.warn('Failed to update original database record:', updateError);
-            } else {
-              savedPhotos.push(updatedRecord);
-            }
-          } else {
-            // Create new records for additional images
-            const { photo: newRecord, error: createError } = await supabaseService.createGeneratedPhoto({
+          try {
+            const { photo: savedPhoto, error: saveError } = await supabaseService.saveGeneratedPhoto({
+              uri: imageUrl,
+              style,
               promptUsed,
               metadata: {
                 modelName,
@@ -186,26 +191,13 @@ export default function GenerationProgressScreen() {
               }
             });
             
-            if (createError || !newRecord) {
-              console.warn(`Failed to create database record for image ${i + 1}:`, createError);
-              continue;
-            }
-            
-            // Update the new record with the generated image
-            const { photo: updatedNewRecord, error: updateNewError } = await supabaseService.updateGeneratedPhoto(
-              newRecord.id,
-              {
-                generatedPhotoUrl: imageUrl,
-                generationStatus: 'completed',
-                completedAt: new Date()
-              }
-            );
-            
-            if (updateNewError) {
-              console.warn(`Failed to update new database record for image ${i + 1}:`, updateNewError);
+            if (saveError) {
+              console.warn(`Failed to save generated photo ${i + 1}:`, saveError);
             } else {
-              savedPhotos.push(updatedNewRecord);
+              savedPhotos.push(savedPhoto);
             }
+          } catch (error) {
+            console.warn(`Error saving generated photo ${i + 1}:`, error);
           }
         }
         
@@ -223,25 +215,10 @@ export default function GenerationProgressScreen() {
           router.replace('/(tabs)/profile');
         }, 2000);
       } else {
-        // Update database record with error
-        await supabaseService.updateGeneratedPhoto(dbRecord.id, {
-          generationStatus: 'failed',
-          completedAt: new Date()
-        });
-        
         throw new Error(result.error || 'Generation failed');
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An error occurred during generation';
-      
-      // Update database record with error if we have one
-      if (generatedPhotoRecord) {
-        await supabaseService.updateGeneratedPhoto(generatedPhotoRecord.id, {
-          generationStatus: 'failed',
-          completedAt: new Date()
-        });
-      }
-      
       setError(errorMessage);
       setIsGenerating(false);
     }
@@ -335,8 +312,19 @@ export default function GenerationProgressScreen() {
                   </Text>
                   {index === currentStep && !step.completed && (
                     <View style={styles.loadingIndicator}>
-                      <MaterialIcons name="hourglass-empty" size={16} color={theme.colors.accent} />
-                      <Text style={styles.loadingText}>Processing...</Text>
+                      <Animated.View style={[styles.iconContainer, { opacity: pulseAnim }]}>
+                        <MaterialIcons name="hourglass-empty" size={16} color={theme.colors.accent} />
+                      </Animated.View>
+                      <Animated.Text style={styles.loadingText}>
+                        Processing
+                        <Animated.Text>
+                          {dotsAnim.interpolate({
+                            inputRange: [0, 1, 2, 3],
+                            outputRange: ['', '.', '..', '...'],
+                            extrapolate: 'clamp',
+                          })}
+                        </Animated.Text>
+                      </Animated.Text>
                     </View>
                   )}
                 </View>
@@ -488,6 +476,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: theme.spacing.xs,
     marginTop: theme.spacing.sm,
+  },
+  iconContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   loadingText: {
     ...globalStyles.caption,

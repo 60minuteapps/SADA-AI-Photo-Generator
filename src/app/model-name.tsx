@@ -34,10 +34,11 @@ export default function ModelNameScreen() {
 
   const suggestedNames = [
     'Professional Me',
-    'Business Portrait',
+    'Business Ready',
     'LinkedIn Profile',
     'Executive Style',
-    'Corporate Look'
+    'Corporate Look',
+    'Career Ready'
   ];
 
   return (
@@ -207,12 +208,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: theme.spacing.sm,
+    justifyContent: 'space-between',
   },
   suggestionButton: {
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
+    flex: 1,
+    minWidth: '48%',
+    maxWidth: '48%',
+    marginBottom: theme.spacing.xs,
   },
   infoCard: {
+    marginBottom: theme.spacing.xl,
     backgroundColor: theme.colors.background,
     borderWidth: 1,
     borderColor: theme.colors.accent,
@@ -236,7 +241,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   continueSection: {
-    marginTop: theme.spacing.xl,
     marginBottom: theme.spacing.xl,
+    paddingBottom: theme.spacing.xl,
   },
 });

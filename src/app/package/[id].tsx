@@ -309,5 +309,6 @@ const styles = StyleSheet.create({
   },
   actionSection: {
     marginBottom: theme.spacing.xl,
+    paddingBottom: theme.spacing.xl,
   },
 });

@@ -61,7 +61,7 @@ export default function GenderSelectionScreen() {
               onPress={() => setSelectedGender(option.value)}
               activeOpacity={0.8}
             >
-              <Card style={styles.optionContent}>
+              <View style={styles.optionContent}>
                 <View style={styles.optionHeader}>
                   <View style={[
                     styles.iconContainer,
@@ -92,7 +92,7 @@ export default function GenderSelectionScreen() {
                     <MaterialIcons name="check-circle" size={24} color={theme.colors.accent} />
                   </View>
                 )}
-              </Card>
+              </View>
             </TouchableOpacity>
           ))}
         </View>
@@ -140,13 +140,16 @@ const styles = StyleSheet.create({
     borderRadius: theme.borderRadius.md,
     borderWidth: 2,
     borderColor: 'transparent',
+    overflow: 'hidden',
   },
   selectedOption: {
     borderColor: theme.colors.accent,
   },
   optionContent: {
     position: 'relative',
-    margin: 0,
+    backgroundColor: theme.colors.card,
+    padding: theme.spacing.lg,
+    borderRadius: theme.borderRadius.md,
   },
   optionHeader: {
     flexDirection: 'row',
@@ -208,7 +211,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   continueSection: {
-    marginTop: theme.spacing.xl,
     marginBottom: theme.spacing.xl,
+    paddingBottom: theme.spacing.xl,
   },
 });

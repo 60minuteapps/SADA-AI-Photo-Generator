@@ -8,6 +8,7 @@ import { theme, globalStyles } from '../constants/theme';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { supabaseService } from '../services/supabase';
+import { imageStorageService } from '../services/imageStorage';
 import { TrainingImage } from '../types';
 
 interface SelectedImage {
@@ -19,8 +20,9 @@ export default function PhotoPickerScreen() {
   const [selectedImages, setSelectedImages] = useState<SelectedImage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingImages, setIsSavingImages] = useState(false);
+  const [imageLoadingStates, setImageLoadingStates] = useState<Record<string, boolean>>({});
 
-  // Load existing training images on component mount
+  // Load existing training images from AsyncStorage
   useEffect(() => {
     loadTrainingImages();
   }, []);
@@ -101,7 +103,7 @@ export default function PhotoPickerScreen() {
       const updatedImages = [...selectedImages, ...newImages];
       setSelectedImages(updatedImages);
       
-      // Save to database
+      // Save to AsyncStorage
       await saveTrainingImages(updatedImages);
     }
   };
@@ -127,7 +129,7 @@ export default function PhotoPickerScreen() {
       const updatedImages = [...selectedImages, newImage];
       setSelectedImages(updatedImages);
       
-      // Save to database
+      // Save to AsyncStorage
       await saveTrainingImages(updatedImages);
     }
   };
@@ -236,7 +238,18 @@ export default function PhotoPickerScreen() {
           <View style={styles.imageGrid}>
             {selectedImages.map((image) => (
               <View key={image.id} style={styles.imageContainer}>
-                <Image source={{ uri: image.uri }} style={styles.selectedImage} />
+                <Image 
+                  source={{ uri: image.uri }} 
+                  style={styles.selectedImage}
+                  onLoadStart={() => setImageLoadingStates(prev => ({ ...prev, [image.id]: true }))}
+                  onLoad={() => setImageLoadingStates(prev => ({ ...prev, [image.id]: false }))}
+                  onError={() => setImageLoadingStates(prev => ({ ...prev, [image.id]: false }))}
+                />
+                {imageLoadingStates[image.id] && (
+                  <View style={styles.imageLoadingIndicator}>
+                    <MaterialIcons name="hourglass-empty" size={16} color={theme.colors.accent} />
+                  </View>
+                )}
                 <TouchableOpacity
                   style={styles.removeButton}
                   onPress={() => removeImage(image.id)}
@@ -273,34 +286,6 @@ export default function PhotoPickerScreen() {
           )}
         </Card>
 
-        {/* Action Buttons */}
-        <View style={styles.actionButtons}>
-          <Button
-            title="Take Photo"
-            onPress={takePhoto}
-            variant="outline"
-            style={styles.actionButton}
-            disabled={isSavingImages || selectedImages.length >= 3}
-          />
-          <Button
-            title="Choose from Library"
-            onPress={pickFromLibrary}
-            variant="secondary"
-            style={styles.actionButton}
-            disabled={isSavingImages || selectedImages.length >= 3}
-          />
-        </View>
-
-        {/* Continue Button */}
-        {selectedImages.length === 3 && (
-          <View style={styles.continueSection}>
-            <Button
-              title="Continue"
-              onPress={handleContinue}
-              size="large"
-            />
-          </View>
-        )}
 
         {/* Tips Section */}
         <Card style={styles.tipsCard}>
@@ -312,6 +297,17 @@ export default function PhotoPickerScreen() {
             <Text style={styles.tip}>• Make sure your face takes up most of the frame</Text>
           </View>
         </Card>
+
+        {/* Continue Button */}
+        {selectedImages.length === 3 && (
+          <View style={styles.continueSection}>
+            <Button
+              title="Continue"
+              onPress={handleContinue}
+              size="large"
+            />
+          </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -406,16 +402,9 @@ const styles = StyleSheet.create({
     marginTop: theme.spacing.md,
     textAlign: 'center',
   },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: theme.spacing.md,
-    marginBottom: theme.spacing.lg,
-  },
-  actionButton: {
-    flex: 1,
-  },
   continueSection: {
-    marginBottom: theme.spacing.lg,
+    marginBottom: theme.spacing.xl,
+    paddingBottom: theme.spacing.xl,
   },
   tipsCard: {
     marginBottom: theme.spacing.xl,
@@ -456,5 +445,16 @@ const styles = StyleSheet.create({
   loadingText: {
     ...globalStyles.body,
     color: theme.colors.accent,
+  },
+  imageLoadingIndicator: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

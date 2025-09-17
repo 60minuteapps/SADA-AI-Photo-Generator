@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { UserSession, DBPhotoPackage, PhotoPackage, GeneratedPhoto, TrainingImage } from '../types';
 import Constants from 'expo-constants';
+import { imageStorageService } from './imageStorage';
 
 // Get environment variables with runtime check
 function getEnvVar(name: string): string {
@@ -198,40 +199,62 @@ class SupabaseService {
     metadata?: Record<string, any>;
   }): Promise<{ photo: GeneratedPhoto | null; error: string | null }> {
     try {
-      const session = await this.getCurrentSession();
-      if (!session) {
-        return { photo: null, error: 'No active session' };
-      }
-
-      const { data, error } = await supabase
-        .from('generated_photos')
-        .insert({
-          session_id: session.id,
-          package_id: photo.packageId,
-          original_photo_url: photo.originalPhotoUrl,
-          prompt_used: photo.promptUsed,
-          generation_status: 'pending',
-          metadata: photo.metadata,
-        })
-        .select()
-        .single();
-
-      if (error) {
-        return { photo: null, error: error.message };
-      }
-
+      // For now, we'll create a placeholder in AsyncStorage
+      // The actual photo will be saved when generation is complete
+      const id = `pending_${Date.now()}`;
+      
       const generatedPhoto: GeneratedPhoto = {
-        id: data.id,
-        sessionId: data.session_id,
-        packageId: data.package_id,
-        originalPhotoUrl: data.original_photo_url,
-        generatedPhotoUrl: data.generated_photo_url,
-        promptUsed: data.prompt_used,
-        generationStatus: data.generation_status,
-        errorMessage: data.error_message,
-        metadata: data.metadata,
-        createdAt: new Date(data.created_at),
-        completedAt: data.completed_at ? new Date(data.completed_at) : undefined,
+        id,
+        sessionId: 'local',
+        packageId: photo.packageId,
+        originalPhotoUrl: photo.originalPhotoUrl,
+        generatedPhotoUrl: undefined,
+        promptUsed: photo.promptUsed,
+        generationStatus: 'pending',
+        errorMessage: undefined,
+        metadata: photo.metadata,
+        createdAt: new Date(),
+        completedAt: undefined,
+      };
+
+      return { photo: generatedPhoto, error: null };
+    } catch (error) {
+      return { photo: null, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  // Save generated photo to AsyncStorage
+  async saveGeneratedPhoto(photoData: {
+    id?: string;
+    uri: string;
+    style: string;
+    packageId?: string;
+    promptUsed?: string;
+    metadata?: Record<string, any>;
+  }): Promise<{ photo: GeneratedPhoto | null; error: string | null }> {
+    try {
+      const storedPhoto = await imageStorageService.saveGeneratedPhoto({
+        id: photoData.id,
+        uri: photoData.uri,
+        style: photoData.style,
+        packageId: photoData.packageId,
+        promptUsed: photoData.promptUsed,
+        generationStatus: 'completed',
+        metadata: photoData.metadata,
+      });
+      
+      const generatedPhoto: GeneratedPhoto = {
+        id: storedPhoto.id,
+        sessionId: 'local',
+        packageId: storedPhoto.packageId,
+        originalPhotoUrl: storedPhoto.originalUrl,
+        generatedPhotoUrl: storedPhoto.uri,
+        promptUsed: storedPhoto.promptUsed,
+        generationStatus: storedPhoto.generationStatus,
+        errorMessage: undefined,
+        metadata: storedPhoto.metadata,
+        createdAt: new Date(storedPhoto.createdAt),
+        completedAt: new Date(storedPhoto.createdAt),
       };
 
       return { photo: generatedPhoto, error: null };
@@ -250,41 +273,27 @@ class SupabaseService {
     }
   ): Promise<{ photo: GeneratedPhoto | null; error: string | null }> {
     try {
-      const session = await this.getCurrentSession();
-      if (!session) {
-        return { photo: null, error: 'No active session' };
+      // Update in AsyncStorage (primary source)
+      const storedPhoto = await imageStorageService.updateGeneratedPhoto(id, {
+        generationStatus: updates.generationStatus,
+      });
+      
+      if (!storedPhoto) {
+        return { photo: null, error: 'Photo not found' };
       }
-
-      const updateData: any = {};
-      if (updates.generatedPhotoUrl !== undefined) updateData.generated_photo_url = updates.generatedPhotoUrl;
-      if (updates.generationStatus !== undefined) updateData.generation_status = updates.generationStatus;
-      if (updates.errorMessage !== undefined) updateData.error_message = updates.errorMessage;
-      if (updates.completedAt !== undefined) updateData.completed_at = updates.completedAt.toISOString();
-
-      const { data, error } = await supabase
-        .from('generated_photos')
-        .update(updateData)
-        .eq('id', id)
-        .eq('session_id', session.id)
-        .select()
-        .single();
-
-      if (error) {
-        return { photo: null, error: error.message };
-      }
-
+      
       const generatedPhoto: GeneratedPhoto = {
-        id: data.id,
-        sessionId: data.session_id,
-        packageId: data.package_id,
-        originalPhotoUrl: data.original_photo_url,
-        generatedPhotoUrl: data.generated_photo_url,
-        promptUsed: data.prompt_used,
-        generationStatus: data.generation_status,
-        errorMessage: data.error_message,
-        metadata: data.metadata,
-        createdAt: new Date(data.created_at),
-        completedAt: data.completed_at ? new Date(data.completed_at) : undefined,
+        id: storedPhoto.id,
+        sessionId: 'local',
+        packageId: storedPhoto.packageId,
+        originalPhotoUrl: storedPhoto.originalUrl,
+        generatedPhotoUrl: storedPhoto.uri,
+        promptUsed: storedPhoto.promptUsed,
+        generationStatus: storedPhoto.generationStatus,
+        errorMessage: undefined,
+        metadata: storedPhoto.metadata,
+        createdAt: new Date(storedPhoto.createdAt),
+        completedAt: storedPhoto.generationStatus === 'completed' ? new Date(storedPhoto.createdAt) : undefined,
       };
 
       return { photo: generatedPhoto, error: null };
@@ -295,33 +304,21 @@ class SupabaseService {
 
   async getSessionGeneratedPhotos(): Promise<{ photos: GeneratedPhoto[]; error: string | null }> {
     try {
-      const session = await this.getCurrentSession();
-      if (!session) {
-        return { photos: [], error: 'No active session' };
-      }
-
-      const { data, error } = await supabase
-        .from('generated_photos')
-        .select('*')
-        .eq('session_id', session.id)
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        return { photos: [], error: error.message };
-      }
-
-      const photos: GeneratedPhoto[] = data.map(item => ({
-        id: item.id,
-        sessionId: item.session_id,
-        packageId: item.package_id,
-        originalPhotoUrl: item.original_photo_url,
-        generatedPhotoUrl: item.generated_photo_url,
-        promptUsed: item.prompt_used,
-        generationStatus: item.generation_status,
-        errorMessage: item.error_message,
-        metadata: item.metadata,
-        createdAt: new Date(item.created_at),
-        completedAt: item.completed_at ? new Date(item.completed_at) : undefined,
+      // Get photos from AsyncStorage (primary source)
+      const storedPhotos = await imageStorageService.getGeneratedPhotos();
+      
+      const photos: GeneratedPhoto[] = storedPhotos.map(storedPhoto => ({
+        id: storedPhoto.id,
+        sessionId: 'local', // AsyncStorage doesn't use session IDs
+        packageId: storedPhoto.packageId,
+        originalPhotoUrl: storedPhoto.originalUrl,
+        generatedPhotoUrl: storedPhoto.uri, // Local file path
+        promptUsed: storedPhoto.promptUsed,
+        generationStatus: storedPhoto.generationStatus,
+        errorMessage: undefined,
+        metadata: storedPhoto.metadata,
+        createdAt: new Date(storedPhoto.createdAt),
+        completedAt: storedPhoto.generationStatus === 'completed' ? new Date(storedPhoto.createdAt) : undefined,
       }));
 
       return { photos, error: null };
@@ -332,20 +329,8 @@ class SupabaseService {
 
   async deleteSessionGeneratedPhotos(): Promise<{ error: string | null }> {
     try {
-      const session = await this.getCurrentSession();
-      if (!session) {
-        return { error: 'No active session' };
-      }
-
-      const { error } = await supabase
-        .from('generated_photos')
-        .delete()
-        .eq('session_id', session.id);
-
-      if (error) {
-        return { error: error.message };
-      }
-
+      // Delete from AsyncStorage (primary source)
+      await imageStorageService.clearGeneratedPhotos();
       return { error: null };
     } catch (error) {
       return { error: error instanceof Error ? error.message : 'Unknown error' };
@@ -475,30 +460,18 @@ class SupabaseService {
 
   async getTrainingImages(): Promise<{ images: TrainingImage[]; error: string | null }> {
     try {
-      const session = await this.getCurrentSession();
-      if (!session) {
-        return { images: [], error: 'No active session' };
-      }
-
-      const { data, error } = await supabase
-        .from('training_images')
-        .select('*')
-        .eq('session_id', session.id)
-        .order('display_order', { ascending: true });
-
-      if (error) {
-        return { images: [], error: error.message };
-      }
-
-      const images: TrainingImage[] = data.map(item => ({
-        id: item.id,
-        sessionId: item.session_id,
-        imageUrl: item.image_url,
-        filePath: item.file_path,
-        displayOrder: item.display_order,
-        metadata: item.metadata,
-        createdAt: new Date(item.created_at),
-        updatedAt: new Date(item.updated_at),
+      // Get images from AsyncStorage (primary source)
+      const storedImages = await imageStorageService.getTrainingImages();
+      
+      const images: TrainingImage[] = storedImages.map(storedImage => ({
+        id: storedImage.id,
+        sessionId: 'local', // AsyncStorage doesn't use session IDs
+        imageUrl: storedImage.uri, // Local file path
+        filePath: storedImage.localPath,
+        displayOrder: storedImage.displayOrder,
+        metadata: storedImage.metadata,
+        createdAt: new Date(storedImage.timestamp),
+        updatedAt: new Date(storedImage.timestamp),
       }));
 
       return { images, error: null };
@@ -509,39 +482,8 @@ class SupabaseService {
 
   async deleteTrainingImage(id: string): Promise<{ error: string | null }> {
     try {
-      const session = await this.getCurrentSession();
-      if (!session) {
-        return { error: 'No active session' };
-      }
-
-      // Get the training image to delete the file
-      const { data: trainingImage, error: fetchError } = await supabase
-        .from('training_images')
-        .select('file_path')
-        .eq('id', id)
-        .eq('session_id', session.id)
-        .single();
-
-      if (fetchError) {
-        return { error: fetchError.message };
-      }
-
-      // Delete from storage if file path exists
-      if (trainingImage?.file_path) {
-        await this.deleteImage(trainingImage.file_path, 'user-photos');
-      }
-
-      // Delete from database
-      const { error } = await supabase
-        .from('training_images')
-        .delete()
-        .eq('id', id)
-        .eq('session_id', session.id);
-
-      if (error) {
-        return { error: error.message };
-      }
-
+      // Delete from AsyncStorage (primary source)
+      await imageStorageService.deleteTrainingImage(id);
       return { error: null };
     } catch (error) {
       return { error: error instanceof Error ? error.message : 'Unknown error' };
@@ -550,38 +492,8 @@ class SupabaseService {
 
   async deleteAllTrainingImages(): Promise<{ error: string | null }> {
     try {
-      const session = await this.getCurrentSession();
-      if (!session) {
-        return { error: 'No active session' };
-      }
-
-      // Get all training images to delete files
-      const { data: trainingImages, error: fetchError } = await supabase
-        .from('training_images')
-        .select('file_path')
-        .eq('session_id', session.id);
-
-      if (fetchError) {
-        return { error: fetchError.message };
-      }
-
-      // Delete files from storage
-      for (const image of trainingImages || []) {
-        if (image.file_path) {
-          await this.deleteImage(image.file_path, 'user-photos');
-        }
-      }
-
-      // Delete from database
-      const { error } = await supabase
-        .from('training_images')
-        .delete()
-        .eq('session_id', session.id);
-
-      if (error) {
-        return { error: error.message };
-      }
-
+      // Delete from AsyncStorage (primary source)
+      await imageStorageService.clearTrainingImages();
       return { error: null };
     } catch (error) {
       return { error: error instanceof Error ? error.message : 'Unknown error' };
@@ -590,29 +502,21 @@ class SupabaseService {
 
   async saveMultipleTrainingImages(imageUris: string[]): Promise<{ images: TrainingImage[]; error: string | null }> {
     try {
-      const session = await this.getCurrentSession();
-      if (!session) {
-        return { images: [], error: 'No active session' };
-      }
-
-      // Clear existing training images first
-      await this.deleteAllTrainingImages();
-
-      const savedImages: TrainingImage[] = [];
+      // Save to AsyncStorage (primary source)
+      const storedImages = await imageStorageService.saveTrainingImages(imageUris);
       
-      for (let i = 0; i < imageUris.length; i++) {
-        const { trainingImage, error } = await this.saveTrainingImage(imageUris[i], i);
-        
-        if (error || !trainingImage) {
-          // If any image fails, clean up and return error
-          await this.deleteAllTrainingImages();
-          return { images: [], error: error || 'Failed to save training image' };
-        }
-        
-        savedImages.push(trainingImage);
-      }
+      const images: TrainingImage[] = storedImages.map(storedImage => ({
+        id: storedImage.id,
+        sessionId: 'local',
+        imageUrl: storedImage.uri,
+        filePath: storedImage.localPath,
+        displayOrder: storedImage.displayOrder,
+        metadata: storedImage.metadata,
+        createdAt: new Date(storedImage.timestamp),
+        updatedAt: new Date(storedImage.timestamp),
+      }));
 
-      return { images: savedImages, error: null };
+      return { images, error: null };
     } catch (error) {
       return { images: [], error: error instanceof Error ? error.message : 'Unknown error' };
     }

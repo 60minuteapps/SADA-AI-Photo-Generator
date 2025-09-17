@@ -71,21 +71,17 @@ export default function StyleSelectionScreen() {
                 onPress={() => setSelectedStyle(style.name as StyleType)}
                 activeOpacity={0.8}
               >
-                <Card style={StyleSheet.flatten([
+                <View style={[
                   styles.styleContent,
                   isSelected && styles.selectedStyleContent
-                ])}>
+                ]}>
                   <View style={styles.styleImageContainer}>
                     <Image 
                       source={exampleImage}
                       style={styles.styleImage}
                       contentFit="cover"
+                      contentPosition="top"
                     />
-                    {isSelected && (
-                      <View style={styles.selectedOverlay}>
-                        <MaterialIcons name="check-circle" size={32} color={theme.colors.accent} />
-                      </View>
-                    )}
                   </View>
                   
                   <View style={styles.styleInfo}>
@@ -102,7 +98,7 @@ export default function StyleSelectionScreen() {
                       {style.description}
                     </Text>
                   </View>
-                </Card>
+                </View>
               </TouchableOpacity>
             );
           })}
@@ -187,9 +183,17 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.accent,
   },
   styleContent: {
-    margin: 0,
-    padding: 0,
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.borderRadius.md,
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   selectedStyleContent: {
     backgroundColor: theme.colors.background,
@@ -197,10 +201,15 @@ const styles = StyleSheet.create({
   styleImageContainer: {
     position: 'relative',
     height: 200,
+    borderTopLeftRadius: theme.borderRadius.md,
+    borderTopRightRadius: theme.borderRadius.md,
+    overflow: 'hidden',
   },
   styleImage: {
     width: '100%',
     height: '100%',
+    borderTopLeftRadius: theme.borderRadius.md,
+    borderTopRightRadius: theme.borderRadius.md,
   },
   selectedOverlay: {
     position: 'absolute',
@@ -258,5 +267,6 @@ const styles = StyleSheet.create({
   },
   continueSection: {
     marginBottom: theme.spacing.xl,
+    paddingBottom: theme.spacing.xl,
   },
 });
