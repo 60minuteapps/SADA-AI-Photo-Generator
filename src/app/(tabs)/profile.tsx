@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, Dimensions, StatusBar } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import * as MediaLibrary from 'expo-media-library';
+import * as FileSystem from 'expo-file-system/legacy';
 import { theme, globalStyles } from '../../constants/theme';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -36,6 +38,9 @@ export default function ProfileScreen() {
   const [generatedPhotos, setGeneratedPhotos] = useState<GeneratedPhoto[]>([]);
   const [aiModelName, setAiModelName] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedImage, setSelectedImage] = useState<GeneratedPhoto | null>(null);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   // Load generated photos from database
   useEffect(() => {
@@ -196,6 +201,73 @@ export default function ProfileScreen() {
     );
   };
 
+  const downloadImage = async () => {
+    if (!selectedImage) return;
+    
+    try {
+      setIsDownloading(true);
+      
+      // Request media library permissions
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Please grant media library permissions to save images.');
+        return;
+      }
+
+      // Generate filename with timestamp and style
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const fileName = `AI_Portrait_${selectedImage.style}_${timestamp}.jpg`;
+      const fileUri = `${FileSystem.documentDirectory}${fileName}`;
+
+      let finalUri: string;
+
+      // Handle data URLs (base64) differently from regular URLs
+      if (selectedImage.uri.startsWith('data:')) {
+        // Convert data URL to file
+        const base64Data = selectedImage.uri.split(',')[1];
+        await FileSystem.writeAsStringAsync(fileUri, base64Data, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        finalUri = fileUri;
+      } else {
+        // Regular URL - use downloadAsync
+        const downloadResult = await FileSystem.downloadAsync(selectedImage.uri, fileUri);
+        if (downloadResult.status !== 200) {
+          throw new Error('Download failed');
+        }
+        finalUri = downloadResult.uri;
+      }
+
+      // Save to media library
+      const asset = await MediaLibrary.createAssetAsync(finalUri);
+      
+      // Create album if it doesn't exist
+      const albumName = 'AI Professional Photos';
+      let album = await MediaLibrary.getAlbumAsync(albumName);
+      
+      if (!album) {
+        album = await MediaLibrary.createAlbumAsync(albumName, asset, false);
+      } else {
+        await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+      }
+      
+      Alert.alert(
+        'Download Complete',
+        `Image saved to your photo library in the "${albumName}" album.`,
+        [{ text: 'OK', style: 'default' }]
+      );
+    } catch (error) {
+      console.error('Download error:', error);
+      Alert.alert(
+        'Download Failed',
+        'Unable to save the image. Please try again.',
+        [{ text: 'OK', style: 'default' }]
+      );
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   return (
     <SafeAreaView style={globalStyles.safeArea} edges={['left', 'right']}>
       <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
@@ -266,13 +338,21 @@ export default function ProfileScreen() {
           ) : generatedPhotos.length > 0 ? (
             <View style={styles.photoGrid}>
               {generatedPhotos.map((photo) => (
-                <View key={photo.id} style={styles.photoContainer}>
+                <TouchableOpacity 
+                  key={photo.id} 
+                  style={styles.photoContainer}
+                  onPress={() => {
+                    setSelectedImage(photo);
+                    setModalVisible(true);
+                  }}
+                  activeOpacity={0.8}
+                >
                   <Image source={{ uri: photo.uri }} style={styles.generatedPhoto} />
                   <Text style={styles.photoStyle}>{photo.style.replace('_', ' ')}</Text>
                   <Text style={styles.photoDate}>
                     {photo.createdAt.toLocaleDateString()}
                   </Text>
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
           ) : (
@@ -300,6 +380,72 @@ export default function ProfileScreen() {
           </View>
         )}
       </ScrollView>
+      
+      {/* Full-Screen Image Modal */}
+      <Modal
+        visible={modalVisible}
+        transparent={true}
+        animationType="fade"
+        statusBarTranslucent={true}
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <StatusBar backgroundColor="rgba(0,0,0,0.9)" barStyle="light-content" />
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            {/* Close Button - Top Right */}
+            <TouchableOpacity 
+              style={styles.closeButton}
+              onPress={() => setModalVisible(false)}
+            >
+              <MaterialIcons name="close" size={28} color={theme.colors.white} />
+            </TouchableOpacity>
+            
+            {/* Download Button - Top Right, Left of Close */}
+            <TouchableOpacity 
+              style={styles.downloadButton}
+              onPress={downloadImage}
+              disabled={isDownloading}
+            >
+              <MaterialIcons 
+                name={isDownloading ? "hourglass-empty" : "download"} 
+                size={24} 
+                color={theme.colors.white} 
+              />
+            </TouchableOpacity>
+            
+            {/* Image */}
+            {selectedImage && (
+              <View style={styles.imageWrapper}>
+                <Image 
+                  source={{ uri: selectedImage.uri }} 
+                  style={styles.fullScreenImage}
+                  contentFit="contain"
+                />
+                
+                {/* Image Info */}
+                <View style={styles.imageInfo}>
+                  <Text style={styles.modalImageStyle}>
+                    {selectedImage.style.replace('_', ' ').toUpperCase()}
+                  </Text>
+                  <Text style={styles.modalImageDate}>
+                    Generated on {selectedImage.createdAt.toLocaleDateString('en-US', {
+                      weekday: 'long',
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric'
+                    })}
+                  </Text>
+                  {aiModelName && (
+                    <Text style={styles.modalModelName}>
+                      Model: {aiModelName}
+                    </Text>
+                  )}
+                </View>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -442,5 +588,90 @@ const styles = StyleSheet.create({
     marginTop: theme.spacing.xs / 2,
     textAlign: 'center',
     color: theme.colors.textSecondary,
+  },
+  // Modal Styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    flex: 1,
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.lg,
+  },
+  imageWrapper: {
+    flex: 1,
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullScreenImage: {
+    width: Dimensions.get('window').width - (theme.spacing.lg * 2),
+    height: Dimensions.get('window').height * 0.7,
+    borderRadius: theme.borderRadius.lg,
+  },
+  imageInfo: {
+    marginTop: theme.spacing.xl,
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    borderRadius: theme.borderRadius.lg,
+    minWidth: '80%',
+  },
+  modalImageStyle: {
+    fontSize: 18,
+    fontFamily: theme.fonts.bold,
+    color: theme.colors.white,
+    textAlign: 'center',
+    marginBottom: theme.spacing.sm,
+    letterSpacing: 1,
+  },
+  modalImageDate: {
+    fontSize: 14,
+    fontFamily: theme.fonts.medium,
+    color: theme.colors.white,
+    textAlign: 'center',
+    opacity: 0.8,
+    marginBottom: theme.spacing.xs,
+  },
+  modalModelName: {
+    fontSize: 12,
+    fontFamily: theme.fonts.regular,
+    color: theme.colors.accent,
+    textAlign: 'center',
+    opacity: 0.9,
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 60,
+    right: theme.spacing.lg,
+    zIndex: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderRadius: 24,
+    width: 48,
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: theme.touchTarget.minHeight,
+    minHeight: theme.touchTarget.minHeight,
+  },
+  downloadButton: {
+    position: 'absolute',
+    top: 60,
+    right: theme.spacing.lg + 48 + theme.spacing.sm,
+    zIndex: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderRadius: 24,
+    width: 48,
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: theme.touchTarget.minHeight,
+    minHeight: theme.touchTarget.minHeight,
   },
 });

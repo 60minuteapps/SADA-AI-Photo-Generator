@@ -99,7 +99,7 @@ class GoogleAIService {
   }
 
   private buildPrompt(template: PromptTemplate, modelName: string): string {
-    const prompt = `Create 3 professional AI-generated portraits following these exact specifications:
+    const prompt = `Create one professional AI-generated portrait following these exact specifications:
 
 TRANSFORMATION INSTRUCTION:
 ${template.transformation_instruction}
@@ -127,7 +127,13 @@ ${template.quality_parameters}
 
 MODEL REFERENCE: ${modelName}
 
-IMPORTANT: Generate exactly 3 distinct professional portrait variations that maintain the subject's authentic appearance while following all styling specifications. Each portrait should be unique in pose or angle while maintaining consistent professional quality and style requirements.`;
+CRITICAL REQUIREMENTS:
+- Generate exactly ONE high-quality professional portrait image
+- The image must be completely separate and distinct
+- Never generate a collage or grid of multiple faces in one image
+- Focus on creating the best possible single professional portrait
+- Maintain authentic appearance while following all styling specifications
+- The image should be a standalone professional portrait with unique pose and expression`;
 
     console.log('📝 Generated prompt for model:', modelName);
     return prompt.trim();
@@ -235,6 +241,8 @@ IMPORTANT: Generate exactly 3 distinct professional portrait variations that mai
         }
       }
 
+      console.log(`📊 Total images extracted: ${generatedImages.length} from ${data.candidates?.length || 0} candidates`);
+
       if (generatedImages.length === 0) {
         throw new Error('No images found in API response');
       }
@@ -243,12 +251,16 @@ IMPORTANT: Generate exactly 3 distinct professional portrait variations that mai
       const targetCount = 3;
       if (generatedImages.length < targetCount) {
         console.warn(`⚠️ Only ${generatedImages.length} images generated, expected ${targetCount}`);
-        // Duplicate images if needed to reach target count
+        // If we have fewer than 3 images, duplicate the existing ones to reach 3
+        // This ensures we always return exactly 3 variations
         while (generatedImages.length < targetCount && generatedImages.length > 0) {
-          generatedImages.push(generatedImages[generatedImages.length % generatedImages.length]);
+          const sourceIndex = (generatedImages.length - 1) % generatedImages.length;
+          generatedImages.push(generatedImages[sourceIndex]);
+          console.log(`🔄 Duplicated image ${sourceIndex + 1} to reach target count`);
         }
       } else if (generatedImages.length > targetCount) {
         console.log(`📏 Trimming to ${targetCount} images from ${generatedImages.length} generated`);
+        // Take only the first 3 images to ensure we get exactly 3
         generatedImages.splice(targetCount);
       }
 
@@ -257,6 +269,72 @@ IMPORTANT: Generate exactly 3 distinct professional portrait variations that mai
       console.error('❌ Error processing API response:', error);
       throw new Error(`Failed to process API response: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  }
+
+  /**
+   * Generate a single image with the API
+   */
+  private async generateSingleImage(processedImages: ProcessedImage[], prompt: string): Promise<string> {
+    const url = `${this.baseUrl}/models/${this.modelName}:generateContent?key=${this.apiKey}`;
+    const requestBody = {
+      contents: [{
+        parts: [
+          { text: prompt },
+          ...processedImages.map(img => ({
+            inlineData: {
+              mimeType: img.mimeType,
+              data: img.data
+            }
+          }))
+        ]
+      }],
+      generationConfig: {
+        temperature: 0.9,
+        topK: 32,
+        topP: 0.8,
+        maxOutputTokens: 8192,
+      }
+    };
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'SADA-AI-Photo-Generator/1.0'
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorMessage = `API request failed: ${response.status} ${response.statusText}`;
+      
+      try {
+        const errorData = JSON.parse(errorText);
+        if (errorData.error?.message) {
+          errorMessage = errorData.error.message;
+        }
+      } catch {
+        // Use default error message
+      }
+      
+      throw new Error(errorMessage);
+    }
+
+    const data: GoogleAIResponse = await response.json();
+    
+    // Check for API errors in response
+    if (data.error) {
+      throw new Error(`API Error ${data.error.code}: ${data.error.message}`);
+    }
+
+    // Extract the first image from the response
+    const images = this.processApiResponse(data);
+    if (images.length === 0) {
+      throw new Error('No image generated in API response');
+    }
+    
+    return images[0];
   }
 
   async generatePhotos(request: GenerationRequest): Promise<GenerationResponse> {
@@ -282,7 +360,7 @@ IMPORTANT: Generate exactly 3 distinct professional portrait variations that mai
 
       // Get prompt template and build prompt
       const template = this.getPromptTemplate(request.gender, request.style);
-      const prompt = this.buildPrompt(template, request.modelName);
+      const basePrompt = this.buildPrompt(template, request.modelName);
 
       // Process all input images
       console.log('🖼️ Processing input images...');
@@ -299,72 +377,52 @@ IMPORTANT: Generate exactly 3 distinct professional portrait variations that mai
         })
       );
 
-      // Build API request
-      const url = `${this.baseUrl}/models/${this.modelName}:generateContent?key=${this.apiKey}`;
-      const requestBody = {
-        contents: [{
-          parts: [
-            { text: prompt },
-            ...processedImages.map(img => ({
-              inlineData: {
-                mimeType: img.mimeType,
-                data: img.data
-              }
-            }))
-          ]
-        }],
-        generationConfig: {
-          temperature: 1.0,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 8192,
-        }
-      };
+      // Generate 3 separate images with different prompts for variation
+      console.log('📡 Generating 3 separate images...');
+      const generatedImages: string[] = [];
+      const variations = [
+        'with a confident professional expression and direct eye contact',
+        'with a warm approachable smile and slightly tilted head',
+        'with a serious authoritative look and strong posture'
+      ];
 
-      console.log('📡 Sending request to Google AI API...');
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'SADA-AI-Photo-Generator/1.0'
-        },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorMessage = `API request failed: ${response.status} ${response.statusText}`;
-        
+      for (let i = 0; i < 3; i++) {
         try {
-          const errorData = JSON.parse(errorText);
-          if (errorData.error?.message) {
-            errorMessage = errorData.error.message;
+          const variationPrompt = `${basePrompt}\n\nSPECIFIC VARIATION: Create this portrait ${variations[i]} to ensure uniqueness from other generated images.`;
+          console.log(`🎨 Generating image ${i + 1}/3...`);
+          
+          const image = await this.generateSingleImage(processedImages, variationPrompt);
+          generatedImages.push(image);
+          console.log(`✅ Generated image ${i + 1}/3`);
+          
+          // Add small delay between requests to avoid rate limiting
+          if (i < 2) {
+            await new Promise(resolve => setTimeout(resolve, 500));
           }
-        } catch {
-          // Use default error message
+        } catch (error) {
+          console.error(`❌ Failed to generate image ${i + 1}:`, error);
+          // Continue with other images even if one fails
         }
-        
-        console.error('❌ API Error:', errorMessage);
-        throw new Error(errorMessage);
       }
 
-      const data: GoogleAIResponse = await response.json();
-      
-      // Check for API errors in response
-      if (data.error) {
-        throw new Error(`API Error ${data.error.code}: ${data.error.message}`);
+      // Ensure we have at least one image
+      if (generatedImages.length === 0) {
+        throw new Error('Failed to generate any images');
       }
 
-      // Process response to extract images
-      console.log('🔄 Processing API response...');
-      const generatedImages = this.processApiResponse(data);
+      // If we have fewer than 3 images, duplicate existing ones
+      while (generatedImages.length < 3 && generatedImages.length > 0) {
+        const sourceIndex = (generatedImages.length - 1) % generatedImages.length;
+        generatedImages.push(generatedImages[sourceIndex]);
+        console.log(`🔄 Duplicated image ${sourceIndex + 1} to reach 3 images`);
+      }
       
       const duration = Date.now() - startTime;
       console.log(`✅ Successfully generated ${generatedImages.length} images in ${duration}ms`);
 
       return {
         success: true,
-        generatedImages,
+        generatedImages: generatedImages.slice(0, 3), // Ensure exactly 3 images
       };
     } catch (error) {
       const duration = Date.now() - startTime;
@@ -447,10 +505,11 @@ IMPORTANT: Generate exactly 3 distinct professional portrait variations that mai
       hasApiKey: !!this.apiKey,
       supportedFormats: ['file://', 'data:', 'base64'],
       maxImages: 3,
+      candidateCount: 3,
       generationConfig: {
-        temperature: 1.0,
-        topK: 40,
-        topP: 0.95,
+        temperature: 0.9,
+        topK: 32,
+        topP: 0.8,
         maxOutputTokens: 8192
       }
     };

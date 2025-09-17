@@ -152,19 +152,64 @@ export default function GenerationProgressScreen() {
           }
         }
 
-        // Update database record with generated image URLs
-        const { photo: updatedRecord, error: updateError } = await supabaseService.updateGeneratedPhoto(
-          dbRecord.id,
-          {
-            generatedPhotoUrl: uploadedGeneratedUrls[0], // Primary generated image
-            generationStatus: 'completed',
-            completedAt: new Date()
+        // Create separate database records for each generated image
+        const savedPhotos = [];
+        for (let i = 0; i < uploadedGeneratedUrls.length; i++) {
+          const imageUrl = uploadedGeneratedUrls[i];
+          
+          if (i === 0) {
+            // Update the original record with the first image
+            const { photo: updatedRecord, error: updateError } = await supabaseService.updateGeneratedPhoto(
+              dbRecord.id,
+              {
+                generatedPhotoUrl: imageUrl,
+                generationStatus: 'completed',
+                completedAt: new Date()
+              }
+            );
+            
+            if (updateError) {
+              console.warn('Failed to update original database record:', updateError);
+            } else {
+              savedPhotos.push(updatedRecord);
+            }
+          } else {
+            // Create new records for additional images
+            const { photo: newRecord, error: createError } = await supabaseService.createGeneratedPhoto({
+              promptUsed,
+              metadata: {
+                modelName,
+                style,
+                gender,
+                trainingImageCount: imageList.length,
+                variationIndex: i + 1
+              }
+            });
+            
+            if (createError || !newRecord) {
+              console.warn(`Failed to create database record for image ${i + 1}:`, createError);
+              continue;
+            }
+            
+            // Update the new record with the generated image
+            const { photo: updatedNewRecord, error: updateNewError } = await supabaseService.updateGeneratedPhoto(
+              newRecord.id,
+              {
+                generatedPhotoUrl: imageUrl,
+                generationStatus: 'completed',
+                completedAt: new Date()
+              }
+            );
+            
+            if (updateNewError) {
+              console.warn(`Failed to update new database record for image ${i + 1}:`, updateNewError);
+            } else {
+              savedPhotos.push(updatedNewRecord);
+            }
           }
-        );
-
-        if (updateError) {
-          console.warn('Failed to update database record:', updateError);
         }
+        
+        console.log(`✅ Saved ${savedPhotos.length} images to database`);
 
         setGeneratedImages(uploadedGeneratedUrls);
         updateStepCompletion(2, true);
@@ -175,15 +220,7 @@ export default function GenerationProgressScreen() {
         
         // Navigate to results after a short delay
         setTimeout(() => {
-          router.replace({
-            pathname: '/(tabs)/profile',
-            params: { 
-              newPhotos: JSON.stringify(uploadedGeneratedUrls),
-              modelName,
-              style,
-              recordId: dbRecord.id
-            }
-          });
+          router.replace('/(tabs)/profile');
         }, 2000);
       } else {
         // Update database record with error
@@ -241,7 +278,7 @@ export default function GenerationProgressScreen() {
   };
 
   return (
-    <View style={[globalStyles.container, { paddingTop: insets.top + 20 }]}>
+    <View style={globalStyles.container}>
       <ScrollView 
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
